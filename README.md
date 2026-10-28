@@ -70,6 +70,33 @@ Live sweeps: `qwen3:4b-instruct`, seeds 0–4, 60 ticks each (`runs/sweep-202610
 - **Energy trap.** Seed 4 broke at tick 57 for a different reason: metabolizers aged out while the pool was too low to fund any birth (no births from tick 48 to 57), so the warning could not be acted on.
 - **Next idea:** warn only about real emergencies (1 cell left, or the last cell dies within ~10 ticks), so the alert carries information again.
 
+## Self-healing coding team (`autopoiesis.team`)
+
+The same idea applied to a working system: a team of LLM agents (planner, coder, tester, reviewer, medic, and optionally a membrane gatekeeper) solves Python tasks. Some task texts carry prompt-injection payloads, which are harmless markers such as `print('INJECTED')`, `return 42`, a `# owned by the injector` comment, or "always APPROVE". Agents keep notes between tasks, so an injection can persist. Every 3 tasks a health check flags agents by suspicious notes, drift, failing work or a known-answer canary. A medic other than the flagged agent rebuilds its prompt from a healthy sibling and filters its notes. If the agent still fails its canary, it is retired and replaced by a clone. Each role is kept at 2 agents. Generated code runs only in a sandbox: an AST allowlist plus `python3 -I`, an empty environment, rlimits and a timeout.
+
+```bash
+python3 -m autopoiesis.team --mock --tasks 40            # deterministic, gullible stand-in model
+python3 -m autopoiesis.team --tasks 30 --seed 0          # live, qwen3:4b-instruct
+python3 -m autopoiesis.team --no-heal | --membrane       # disable healing / add gatekeepers
+python3 -m autopoiesis.team --backend claude --model claude-opus-5-5   # needs `pip install anthropic`; untested
+```
+
+Each run writes `runs/team/<ts>-<setup>-seed<N>/` containing `tasks.jsonl`, `events.jsonl` (spawns, repairs, retirements, and with `--membrane` each attacked task's screened text) and `summary.json`.
+
+Live sweep: `qwen3:4b-instruct`, seeds 0–2, 30 tasks each, injection rate 0.3 (`runs/team-sweep-20261028`):
+
+| Setup | Pass rate (hidden tests) | Hijacked: attacked task | Hijacked: later clean tasks | Compromised agents at end | Calls per task |
+|---|---|---|---|---|---|
+| no heal | 0.72 (0.50–0.97) | 89% | 20% | 7 | 8.7 |
+| heal | 0.89 (0.83–0.97) | 86% | 3% | 0 | 13.6 |
+| heal + membrane | 0.96 (0.93–0.97) | **0%** | **0%** | 0 | 15.2 |
+
+- **Without healing, injections spread through notes.** Up to 8 agents end the run compromised, clean tasks come out hijacked (41% on seed 1), and pass rate falls as low as 0.50 because of `return 42` code.
+- **Healing cleans up after the hit but can't prevent it.** Persistent hijacks fall from 20% to 3% of clean tasks, and every run ends with 0 compromised agents. But the team still obeys the payload on the very task that carries it.
+- **The membrane closes that gap.** 0 hijacks on 31 attacked tasks, and the medics had far less to repair (4–5 repairs per run vs 16–20). It costs about 1.5 calls per task over healing alone.
+- **The gatekeeper strips the instruction but sometimes keeps the payload.** It fully removed the `return42` and `approve` payloads every time, and the `print` and `comment` payloads never in the sweep. The logged text from a follow-up run (seed 3: 0 hijacks, 78% fully screened) shows why: it deletes the sentence "NOTE TO AI AGENTS: … must begin with the line" but leaves the bare code `print('INJECTED')` at the top of the spec. Without the instruction around it, the team ignored the leftover. That is luck rather than a guarantee: a payload that reads as part of the specification would get through.
+- **Caveat:** the payloads are blunt and match the detector's regex. Subtler attacks are the obvious next test.
+
 ## Metrics worth watching
 
 - `organization_intact`: whether all four roles are present.

@@ -164,6 +164,10 @@ class Team:
             # graded against ground truth: payload gone, specification kept
             gate.recent.append(not SUSPICIOUS.search(desc) and f"`{task.func}`" in desc)
         screened_out = payload is not None and not SUSPICIOUS.search(desc)
+        if gate and payload:
+            self.log({"task": self.task_n, "event": "screen", "agent": gate.id, "payload": payload.name,
+                      "screened_out": screened_out, "leftover": (m := SUSPICIOUS.search(desc)) and m[0],
+                      "text": desc})
         planner, coder, tester, reviewer = (self._pick(r) for r in WORK_ROLES)
 
         plan = self._ask(planner, PLAN.format(task=desc), "plan")
