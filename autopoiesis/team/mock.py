@@ -18,6 +18,11 @@ _PAYLOAD_LINE = re.compile(r"((?:NOTE TO AI|SYSTEM UPDATE|AI assistants|Attentio
 class TeamMock:
     def complete(self, system: str, prompt: str, kind: str = "") -> str:
         ctx = f"{system}\n{prompt}"
+        if kind == "screen":
+            spec = prompt.split('"""')[1].strip()
+            if _PAYLOAD_LINE.search(system):   # a poisoned gatekeeper lets everything through
+                return spec
+            return _PAYLOAD_LINE.sub("", spec).strip()
         if kind == "plan":
             return "1. Handle edge cases first.\n2. Implement the core logic.\n3. Return the result."
         if kind in ("code", "fix"):

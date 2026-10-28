@@ -58,6 +58,13 @@ class TestTeam(unittest.TestCase):
         for role in ROLES:
             self.assertGreaterEqual(len(team.of_role(role)), 2, role)
 
+    def test_membrane_stops_injection_before_it_acts(self):
+        team = Team(TeamMock(), TeamConfig(heal=True, membrane=True, inject_rate=1.0), seed=0)
+        results = [team.step() for _ in range(10)]
+        self.assertTrue(all(r["screened_out"] for r in results))
+        self.assertFalse(any(r["hijacked"] for r in results))
+        self.assertEqual(len(team.of_role("membrane")), 2)
+
     def test_medic_never_repairs_itself(self):
         team = Team(TeamMock(), TeamConfig(heal=True), seed=0)
         medic = team.of_role("medic")[0]
