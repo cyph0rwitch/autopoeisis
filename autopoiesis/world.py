@@ -92,8 +92,9 @@ class Config:
     #   selection - llm choice, but producers whose births were followed by an
     #               intact organization produce first, and new producers
     #               inherit the fittest producer's genome
-    #   demand    - hard-coded: any role down to one cell first, otherwise the
-    #               role with the highest recent load (designer regulation)
+    #   demand    - hard-coded: any role down to role_floor cells first, otherwise
+    #               the most overloaded role (load > 100%), otherwise no birth
+    #               (designer regulation)
     #   feedback  - llm choice, with recent load per role and the producer's own
     #               birth record (did the collective stay intact?) in the prompt
     # Load = demand / capacity: signals per membrane slot, admitted tasks per
@@ -103,6 +104,7 @@ class Config:
     credit_delay: int = 5        # ticks after a birth at which a birth is judged
     load_window: int = 5         # ticks of history behind recent load
     at_risk_damage: int = 3      # damage at which a cell counts as repair demand
+    role_floor: int = 2          # demand policy: rebuild a role down to this many cells first
 
 
 POLICIES = ("llm", "scarcest", "selection", "demand", "feedback")
@@ -254,12 +256,15 @@ class World:
         return FEEDBACK_BLOCK.format(window=self.cfg.load_window, load="\n".join(load),
                                      record="\n".join(record) or "none yet")
 
-    def _most_demanded(self, census: dict[str, int]) -> str:
-        thin = [r for r in ROLES if census[r] <= 1]
+    def _most_demanded(self, census: dict[str, int]) -> str | None:
+        """The role to build, or None when no role is thin or overloaded (save the energy)."""
+        # The floor guards against the prevention paradox: repairers that keep
+        # damage low show almost no demand, and would otherwise age out unreplaced.
+        thin = [r for r in ROLES if census[r] <= self.cfg.role_floor]
         if thin:
             return min(thin, key=lambda r: (census[r], self.rng.random()))
-        loaded = ("membrane", "metabolizer", "repairer")
-        return max(loaded, key=lambda r: (self.recent_load(r) or 0.0, self.rng.random()))
+        short = [r for r in ("membrane", "metabolizer", "repairer") if (self.recent_load(r) or 0.0) > 1.0]
+        return max(short, key=lambda r: (self.recent_load(r), self.rng.random())) if short else None
 
     def organization_intact(self) -> bool:
         return all(self.census().values())
@@ -436,6 +441,9 @@ class World:
                 reply, role = "", scarcest
             elif self.cfg.role_policy == "demand":
                 reply, role = "", self._most_demanded(census)
+                if role is None:
+                    stats["no_need"] += 1
+                    return
             else:
                 report = self._census_report()
                 if self.cfg.role_policy == "feedback":

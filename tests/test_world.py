@@ -99,17 +99,20 @@ class TestWorld(unittest.TestCase):
 
     def test_demand_policy_rebuilds_thin_role_first(self):
         w = World(MockBackend(0), Config(role_policy="demand"), seed=0)
-        for role in ("membrane", "membrane", "metabolizer", "metabolizer", "repairer", "producer", "producer"):
+        for role in ("membrane",) * 3 + ("metabolizer",) * 3 + ("repairer",) * 2 + ("producer",) * 3:
             w._spawn(role, f"You are a {role} cell.", 0, None)
-        w.load.append({"membrane": (6, 4), "metabolizer": (1, 6), "repairer": (0, 1)})
+        w.load.append({"membrane": (6, 6), "metabolizer": (1, 9), "repairer": (0, 2)})
         self.assertEqual(w._most_demanded(w.census()), "repairer")
 
     def test_demand_policy_builds_most_loaded_role(self):
         w = World(MockBackend(0), Config(role_policy="demand"), seed=0)
-        for role in ("membrane", "metabolizer", "repairer", "producer") * 2:
+        for role in ("membrane", "metabolizer", "repairer", "producer") * 3:
             w._spawn(role, f"You are a {role} cell.", 0, None)
         w.load.append({"membrane": (6, 4), "metabolizer": (4, 6), "repairer": (1, 2)})
         self.assertEqual(w._most_demanded(w.census()), "membrane")
+        w.load.clear()
+        w.load.append({"membrane": (6, 6), "metabolizer": (4, 9), "repairer": (1, 3)})
+        self.assertIsNone(w._most_demanded(w.census()))   # nothing short: save the energy
 
     def test_load_counts_only_at_risk_cells_as_repair_demand(self):
         w = World(MockBackend(0), Config(decay_rate=0.0, perturbations_per_tick=0, start_pool=0), seed=0)
