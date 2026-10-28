@@ -24,18 +24,37 @@ python3 -m unittest                       # stdlib only, no deps
 python3 -m autopoiesis --mock --ticks 200 # deterministic stand-in model, instant
 python3 -m autopoiesis --ticks 60         # live, qwen3:4b-instruct via Ollama (~4s/tick on a 1070 Ti)
 python3 -m autopoiesis --model qwen3:8b --toxin-rate 0.5 --seed 3
+python3 -m autopoiesis --policy scarcest  # or selection; see Status
+python3 -m autopoiesis.summarize runs/    # compare runs: break tick, intact share, births by role
 ```
 
 Each run writes `runs/<timestamp>-seed<N>/` containing:
-- `metrics.jsonl`: one line per tick (census, `organization_intact`, pool, damage, `endogenous_fraction`, `template_closure`, per-tick stats)
-- `events.jsonl`: every birth, death, infection and repair, with genomes before and after
+- `metrics.jsonl`: one line per tick (census, `organization_intact`, pool, damage, `endogenous_fraction`, `template_closure`, per-role `utilization`, per-tick stats)
+- `events.jsonl`: every birth, death, infection, repair (genomes before and after) and producer role choice (with the model's raw reply)
 - `state.json`: the latest snapshot of every living cell
 
-## Status (2026-10-26)
+## Status (2026-10-28)
 
-- **Mock backend:** 7 of 8 seeds keep the organization intact for 200 ticks. That means full structural turnover, about 10 generations, and a population of 13–15.
-- **Live, `qwen3:4b-instruct` and `qwen3:8b`:** the organization breaks within about 20 ticks on every run so far (4 runs on the 4B model, 1 on the 8B). Every time, the cause is that **producers make a monoculture**. Depending on the run they keep giving birth to one role (all metabolizers, all repairers, or, on 8B, mostly producers), while a scarce role (membrane or metabolizer) ages out and nothing replaces it. Screening, repair and metabolism all work well on the live model. Repairs reliably remove spliced-in toxins, and once word reversal was dropped (small models can't reverse letters) arithmetic and sorting are solved more than 95% of the time.
-- The choice of what to produce is therefore the open problem. Two kinds of fix are possible. One is a hard-coded "build the scarcest role" rule, which means the designer is doing the regulating. The other is a mechanism that makes regulation endogenous: producers rewarded for keeping the organization intact, or a role-balance signal that flows through the network. Which one counts as autopoiesis is a judgement call, not a bug fix.
+Producers choose the role of each new cell according to `--policy`:
+
+| Policy | How the role is chosen |
+|---|---|
+| `llm` (default) | The producer's model reads a census and picks |
+| `scarcest` | Hard-coded: the role with the fewest cells. This is designer regulation, used as the baseline |
+| `selection` | The model picks, but producers whose births were followed by an intact organization `credit_delay` (5) ticks later produce first, and new producers inherit the fittest producer's genome |
+
+Live sweep: `qwen3:4b-instruct`, seeds 0–4, 60 ticks each (`runs/sweep-20261028`):
+
+| Policy | Seeds where all 4 roles survived 60 ticks | Mean share of ticks with all 4 roles | Lost a role at tick |
+|---|---|---|---|
+| `scarcest` | 5/5 | 100% | never |
+| `selection` | 0/5 | 35% | 17–28 |
+| `llm` | 0/5 | 37% | 17–28 |
+
+- **The producer's role choice is the whole failure.** Under `scarcest`, every seed survives with 12–14 cells, births spread evenly across roles, and 3 generations. Under `llm`, producers breed one role (8 repairers, 13 metabolizers, 8 producers…) until a scarce role ages out.
+- **`selection` has no measurable effect.** The collective loses a role before most producers have a scored birth, and only 0–5 new producers are ever born to inherit a genome. Selection across generations is too slow when the failure comes within about one lifespan.
+- **Utilization under `scarcest` (seed 3, tick 60):** repairer 0.99, membrane 0.80, metabolizer 0.38, producer 0.02. Equal counts keep the system alive but don't match need: repair is the bottleneck, and metabolizers and producers are oversupplied.
+- **Next idea:** give producers in-context feedback, such as their own birth track record or per-role utilization. It acts within a single run, not across generations.
 
 ## Metrics worth watching
 
