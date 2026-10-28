@@ -97,19 +97,26 @@ class TestWorld(unittest.TestCase):
         self.assertEqual(w.producer_fitness(bad), 0.25)
         self.assertIs(w._fittest_producer(), good)
 
-    def test_utilized_policy_rebuilds_thin_role_first(self):
-        w = World(MockBackend(0), Config(role_policy="utilized"), seed=0)
+    def test_demand_policy_rebuilds_thin_role_first(self):
+        w = World(MockBackend(0), Config(role_policy="demand"), seed=0)
         for role in ("membrane", "membrane", "metabolizer", "metabolizer", "repairer", "producer", "producer"):
             w._spawn(role, f"You are a {role} cell.", 0, None)
-        w.usage.append({"membrane": (4, 4), "metabolizer": (1, 6), "repairer": (0, 1), "producer": (0, 2)})
-        self.assertEqual(w._most_utilized(w.census()), "repairer")
+        w.load.append({"membrane": (6, 4), "metabolizer": (1, 6), "repairer": (0, 1)})
+        self.assertEqual(w._most_demanded(w.census()), "repairer")
 
-    def test_utilized_policy_builds_most_loaded_role(self):
-        w = World(MockBackend(0), Config(role_policy="utilized"), seed=0)
+    def test_demand_policy_builds_most_loaded_role(self):
+        w = World(MockBackend(0), Config(role_policy="demand"), seed=0)
         for role in ("membrane", "metabolizer", "repairer", "producer") * 2:
             w._spawn(role, f"You are a {role} cell.", 0, None)
-        w.usage.append({"membrane": (2, 4), "metabolizer": (1, 6), "repairer": (2, 2), "producer": (0, 2)})
-        self.assertEqual(w._most_utilized(w.census()), "repairer")
+        w.load.append({"membrane": (6, 4), "metabolizer": (4, 6), "repairer": (1, 2)})
+        self.assertEqual(w._most_demanded(w.census()), "membrane")
+
+    def test_load_counts_only_at_risk_cells_as_repair_demand(self):
+        w = World(MockBackend(0), Config(decay_rate=0.0, perturbations_per_tick=0, start_pool=0), seed=0)
+        w._spawn("repairer", "You are a repairer cell.", 0, None)
+        w._spawn("membrane", "You are a membrane cell.", 0, None).damage = 1
+        w.step()
+        self.assertEqual(w.recent_load("repairer"), 0.0)
 
     def test_feedback_reports_load_and_own_births(self):
         w = World(MockBackend(0), Config(role_policy="feedback", credit_delay=1, start_pool=0), seed=0)
@@ -119,7 +126,8 @@ class TestWorld(unittest.TestCase):
         text = w._feedback(p)
         self.assertIn("membrane at tick 0", text)
         self.assertIn("a role had died out 1 ticks later", text)
-        self.assertIn("producer: 0%", text)
+        self.assertIn("membrane: 300%", text)
+        self.assertIn("metabolizer: no cells", text)
 
     def test_garbage_genome_is_rejected(self):
         w = World(FixedBackend("no"), Config(decay_rate=0.0, perturbations_per_tick=0, start_pool=100), seed=0)

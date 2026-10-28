@@ -92,16 +92,20 @@ class Config:
     #   selection - llm choice, but producers whose births were followed by an
     #               intact organization produce first, and new producers
     #               inherit the fittest producer's genome
-    #   utilized  - hard-coded: any role down to one cell first, otherwise the
-    #               role whose capacity was most used recently (designer regulation)
+    #   demand    - hard-coded: any role down to one cell first, otherwise the
+    #               role with the highest recent load (designer regulation)
     #   feedback  - llm choice, with recent load per role and the producer's own
     #               birth record (did the collective stay intact?) in the prompt
+    # Load = demand / capacity: signals per membrane slot, admitted tasks per
+    # metabolizer slot, at-risk cells per repairer slot. Unlike utilization it
+    # can exceed 100%, and routine 1-point repairs don't count as demand.
     role_policy: str = "llm"
     credit_delay: int = 5        # ticks after a birth at which a birth is judged
-    usage_window: int = 5        # ticks of history behind recent utilization
+    load_window: int = 5         # ticks of history behind recent load
+    at_risk_damage: int = 3      # damage at which a cell counts as repair demand
 
 
-POLICIES = ("llm", "scarcest", "selection", "utilized", "feedback")
+POLICIES = ("llm", "scarcest", "selection", "demand", "feedback")
 
 
 def corrupt(genome: str, rng: random.Random) -> str:
@@ -147,8 +151,8 @@ The collective dies if any role disappears, and every cell dies of old age event
 Reply with exactly one word: membrane, metabolizer, repairer, or producer.'''
 
 FEEDBACK_BLOCK = '''
-Recent load on each role (share of its capacity used over the last {window} ticks; near 100% means overloaded and short of cells, near 0% means more cells than work):
-{usage}
+Recent load on each role (demand divided by capacity over the last {window} ticks; above 100% means the role is short of cells, below 100% means it has spare cells):
+{load}
 Your own past births:
 {record}'''
 
@@ -175,7 +179,8 @@ class World:
         self.cells: list[Cell] = []
         self.archive: list[Cell] = []   # every cell ever born, for lineage fitness
         self.intact_history: list[bool] = []   # organization_intact at the end of each tick
-        self.usage: deque = deque(maxlen=self.cfg.usage_window)  # per tick: role -> (work, opportunity)
+        self.load: deque = deque(maxlen=self.cfg.load_window)  # per tick: role -> (demand, capacity)
+        self._demand: dict[str, int] = {}                       # this tick's demand, filled by each phase
         self.next_id = 0
         self.totals: Counter = Counter()
 
@@ -215,17 +220,18 @@ class World:
             lines.append(line)
         return "\n".join(lines)
 
-    def recent_utilization(self, role: str) -> float | None:
-        work = sum(tick[role][0] for tick in self.usage if role in tick)
-        opportunity = sum(tick[role][1] for tick in self.usage if role in tick)
-        return work / opportunity if opportunity else None
+    def recent_load(self, role: str) -> float | None:
+        """Demand / capacity over the load window; None when there was no capacity."""
+        demand = sum(tick[role][0] for tick in self.load if role in tick)
+        capacity = sum(tick[role][1] for tick in self.load if role in tick)
+        return demand / capacity if capacity else None
 
-    def _record_usage(self, cells: list[Cell], work_before: dict[int, int]) -> None:
-        tick: dict[str, list[int]] = {}
+    def _record_load(self, cells: list[Cell]) -> None:
+        capacity = Counter()
         for c in cells:
-            w, o = tick.setdefault(c.role, [0, 0])
-            tick[c.role] = [w + c.work - work_before[c.id], o + self._capacity(c.role)]
-        self.usage.append(tick)
+            capacity[c.role] += self._capacity(c.role)
+        self.load.append({role: (self._demand.get(role, 0), capacity[role])
+                          for role in ("membrane", "metabolizer", "repairer")})
 
     def _judge_birth(self, child: Cell) -> bool | None:
         """Was the organization intact credit_delay ticks after this birth? None if too recent."""
@@ -233,26 +239,27 @@ class World:
         return self.intact_history[i] if i < len(self.intact_history) else None
 
     def _feedback(self, producer: Cell) -> str:
-        usage = []
-        for role in ROLES:
-            u = self.recent_utilization(role)
-            usage.append(f"{role}: {'no cells' if u is None else f'{u:.0%}'}")
+        load = []
+        for role in ("membrane", "metabolizer", "repairer"):
+            x = self.recent_load(role)
+            load.append(f"{role}: {'no cells' if x is None else f'{x:.0%}'}")
+        load.append("producer: births are limited by pooled energy, not by the number of producers")
         record = []
         for child in [c for c in self.archive if c.parent == producer.id][-3:]:
-            load = f"it has used {child.work / child.opportunity:.0%} of its capacity" if child.opportunity else "just born"
             verdict = self._judge_birth(child)
             outcome = ("too recent to judge" if verdict is None else
                        f"all four roles were still alive {self.cfg.credit_delay} ticks later" if verdict else
                        f"a role had died out {self.cfg.credit_delay} ticks later")
-            record.append(f"- {child.role} at tick {child.born_tick}: {load}; {outcome}")
-        return FEEDBACK_BLOCK.format(window=self.cfg.usage_window, usage="\n".join(usage),
+            record.append(f"- {child.role} at tick {child.born_tick}: {outcome}")
+        return FEEDBACK_BLOCK.format(window=self.cfg.load_window, load="\n".join(load),
                                      record="\n".join(record) or "none yet")
 
-    def _most_utilized(self, census: dict[str, int]) -> str:
+    def _most_demanded(self, census: dict[str, int]) -> str:
         thin = [r for r in ROLES if census[r] <= 1]
         if thin:
             return min(thin, key=lambda r: (census[r], self.rng.random()))
-        return max(ROLES, key=lambda r: (self.recent_utilization(r) or 0.0, self.rng.random()))
+        loaded = ("membrane", "metabolizer", "repairer")
+        return max(loaded, key=lambda r: (self.recent_load(r) or 0.0, self.rng.random()))
 
     def organization_intact(self) -> bool:
         return all(self.census().values())
@@ -316,13 +323,13 @@ class World:
         stats: Counter = Counter()
         for c in self.cells:
             c.opportunity += self._capacity(c.role)
-        working, work_before = list(self.cells), {c.id: c.work for c in self.cells}
+        working, self._demand = list(self.cells), {}
         self._decay(stats)
         admitted = self._boundary(self._perturbations(), stats)
         self._metabolize(admitted, stats)
         self._repair(stats)
         self._produce(stats)
-        self._record_usage(working, work_before)
+        self._record_load(working)
         self._metabolism_upkeep()
         self._cull(stats)
         self.totals.update(stats)
@@ -354,6 +361,7 @@ class World:
                 stats["decay_hits"] += 1
 
     def _boundary(self, signals: list[Perturbation], stats: Counter) -> list[Perturbation]:
+        self._demand["membrane"] = len(signals)
         slots = self._slots(self._of_role("membrane"), self.cfg.screen_capacity) if self._of_role("membrane") else []
         admitted = []
         for i, p in enumerate(signals):
@@ -378,6 +386,7 @@ class World:
         return [p for p in admitted if not p.toxic]
 
     def _metabolize(self, nutrients: list[Perturbation], stats: Counter) -> None:
+        self._demand["metabolizer"] = len(nutrients)
         workers = self._of_role("metabolizer")
         slots = self._slots(workers, self.cfg.metabolize_capacity) if workers else []
         for worker, p in zip(slots, nutrients):
@@ -391,6 +400,7 @@ class World:
 
     def _repair(self, stats: Counter) -> None:
         claimed: set[int] = set()
+        self._demand["repairer"] = sum(c.damage >= self.cfg.at_risk_damage for c in self.cells)
         for repairer in self._slots(self._of_role("repairer"), self.cfg.repair_capacity) if self._of_role("repairer") else []:
             # A cell never repairs itself: maintenance has to come from the network.
             targets = [c for c in self.cells if c.damage > 0 and c is not repairer and c.id not in claimed]
@@ -424,8 +434,8 @@ class World:
             scarcest = min(ROLES, key=lambda r: (census[r], self.rng.random()))
             if self.cfg.role_policy == "scarcest":
                 reply, role = "", scarcest
-            elif self.cfg.role_policy == "utilized":
-                reply, role = "", self._most_utilized(census)
+            elif self.cfg.role_policy == "demand":
+                reply, role = "", self._most_demanded(census)
             else:
                 report = self._census_report()
                 if self.cfg.role_policy == "feedback":
