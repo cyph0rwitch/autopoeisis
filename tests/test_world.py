@@ -71,6 +71,29 @@ class TestWorld(unittest.TestCase):
             w.step()
         self.assertEqual(w.cells, [])
 
+    def test_scarcest_policy_builds_missing_role(self):
+        w = World(FixedBackend("A genome long enough to be accepted as valid."),
+                  Config(decay_rate=0.0, perturbations_per_tick=0, start_pool=100, role_policy="scarcest"), seed=0)
+        for role in ("producer", "metabolizer", "metabolizer", "repairer"):
+            w._spawn(role, f"You are a {role} cell.", 0, None)
+        w.step()
+        self.assertEqual(w.cells[-1].role, "membrane")
+
+    def test_utilization_counts_idle_capacity(self):
+        w = World(MockBackend(0), Config(decay_rate=0.0, perturbations_per_tick=1, toxin_rate=0.0), seed=0)
+        busy = w._spawn("membrane", "You are a membrane cell.", 0, None)
+        w.step()
+        self.assertEqual((busy.work, busy.opportunity), (1, 2))
+
+    def test_selection_prefers_producer_with_busy_offspring(self):
+        w = World(MockBackend(0), Config(role_policy="selection"), seed=0)
+        good = w._spawn("producer", "You are a producer cell.", 0, None)
+        bad = w._spawn("producer", "You are a producer cell.", 0, None)
+        w._spawn("membrane", "m", 1, good.id).__dict__.update(work=9, opportunity=10)
+        w._spawn("metabolizer", "m", 1, bad.id).__dict__.update(work=1, opportunity=10)
+        self.assertGreater(w.producer_fitness(good), w.producer_fitness(bad))
+        self.assertIs(w._fittest_producer(), good)
+
     def test_garbage_genome_is_rejected(self):
         w = World(FixedBackend("no"), Config(decay_rate=0.0, perturbations_per_tick=0, start_pool=100), seed=0)
         w._spawn("producer", "You are a producer cell.", 0, None)

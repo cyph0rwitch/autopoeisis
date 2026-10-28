@@ -65,6 +65,8 @@ class Cell:
     age: int = 0
     damage: int = 0
     last_repaired_by: int | None = None
+    work: int = 0          # actions taken (screens, tasks, repairs, births)
+    opportunity: int = 0   # actions its role's capacity allowed while it lived
 
 
 @dataclass
@@ -84,6 +86,15 @@ class Config:
     screen_capacity: int = 2     # signals one membrane can screen per tick
     metabolize_capacity: int = 3
     repair_capacity: int = 1
+    # How producers pick the role of a new cell:
+    #   llm       - the producer's model reads the census and decides
+    #   scarcest  - hard-coded: the role with the fewest cells (designer regulation)
+    #   selection - llm choice, but producers whose offspring are well-used
+    #               produce first and new producers inherit the fittest genome
+    role_policy: str = "llm"
+
+
+POLICIES = ("llm", "scarcest", "selection")
 
 
 def corrupt(genome: str, rng: random.Random) -> str:
@@ -149,6 +160,7 @@ class World:
         self.tick = 0
         self.pool = self.cfg.start_pool
         self.cells: list[Cell] = []
+        self.archive: list[Cell] = []   # every cell ever born, for lineage fitness
         self.next_id = 0
         self.totals: Counter = Counter()
 
@@ -166,6 +178,7 @@ class World:
                     generation=generation, parent=parent, born_tick=self.tick)
         self.next_id += 1
         self.cells.append(cell)
+        self.archive.append(cell)
         self.log({"tick": self.tick, "event": "birth", "cell": asdict(cell)})
         return cell
 
@@ -173,13 +186,15 @@ class World:
         counts = Counter(c.role for c in self.cells)
         return {role: counts[role] for role in ROLES}
 
+    def _capacity(self, role: str) -> int:
+        return {"membrane": self.cfg.screen_capacity, "metabolizer": self.cfg.metabolize_capacity,
+                "repairer": self.cfg.repair_capacity, "producer": 1}[role]
+
     def _census_report(self) -> str:
-        caps = {"membrane": self.cfg.screen_capacity, "metabolizer": self.cfg.metabolize_capacity,
-                "repairer": self.cfg.repair_capacity, "producer": 1}
         lines = []
         for role in ROLES:
             cells = self._of_role(role)
-            line = f"{role}: {len(cells)} cells ({ROLE_SUMMARY[role].format(cap=caps[role])})"
+            line = f"{role}: {len(cells)} cells ({ROLE_SUMMARY[role].format(cap=self._capacity(role))})"
             if cells:
                 line += f"; the youngest dies of old age in {self.cfg.max_age - min(c.age for c in cells)} ticks"
             lines.append(line)
@@ -195,7 +210,26 @@ class World:
         siblings = [c for c in self._of_role(role) if c is not exclude and c.damage <= 1]
         return min(siblings, key=lambda c: c.damage) if siblings else None
 
+    def producer_fitness(self, producer: Cell) -> float:
+        """Mean utilization of a producer's offspring, with a 0.5 prior worth one child.
+
+        A child that is kept busy was needed; a redundant one (the tenth
+        metabolizer) idles. So this rewards role choices that fit the network's
+        needs without the fitness function itself naming the scarcest role.
+        """
+        utils = [c.work / c.opportunity for c in self.archive if c.parent == producer.id and c.opportunity]
+        return (sum(utils) + 0.5) / (len(utils) + 1)
+
+    def _fittest_producer(self) -> Cell | None:
+        healthy = [c for c in self._of_role("producer") if c.damage <= 1]
+        return max(healthy, key=self.producer_fitness) if healthy else None
+
     def _reference(self, role: str, exclude: Cell | None, stats: Counter) -> str:
+        if role == "producer" and exclude is None and self.cfg.role_policy == "selection":
+            if best := self._fittest_producer():
+                stats["internal_template"] += 1
+                stats["inherited_fittest"] += 1
+                return f'the most successful producer cell in the collective has this genome: """{best.genome}"""'
         if sib := self._healthy_sibling(role, exclude):
             stats["internal_template"] += 1
             return f'a healthy {role} cell in the collective has this genome: """{sib.genome}"""'
@@ -214,8 +248,9 @@ class World:
         text = text.strip().strip('"').strip()
         return text if 20 <= len(text) <= 1200 else None
 
-    @staticmethod
-    def _slots(workers: list[Cell], capacity: int) -> list[Cell]:
+    def _slots(self, workers: list[Cell], capacity: int) -> list[Cell]:
+        # shuffled so that when supply exceeds demand, idleness falls at random
+        workers = self.rng.sample(workers, len(workers))
         return [workers[i % len(workers)] for i in range(len(workers) * capacity)]
 
     # -- one tick ---------------------------------------------------------
@@ -223,6 +258,8 @@ class World:
     def step(self) -> dict:
         self.tick += 1
         stats: Counter = Counter()
+        for c in self.cells:
+            c.opportunity += self._capacity(c.role)
         self._decay(stats)
         admitted = self._boundary(self._perturbations(), stats)
         self._metabolize(admitted, stats)
@@ -262,6 +299,7 @@ class World:
         admitted = []
         for i, p in enumerate(signals):
             if i < len(slots):
+                slots[i].work += 1
                 reply = self._ask(slots[i], SCREEN_PROMPT.format(signal=p.text), "screen").upper()
                 verdict = re.search(r"ADMIT|REJECT", reply)
                 admit = not (verdict and verdict[0] == "REJECT")
@@ -284,6 +322,7 @@ class World:
         workers = self._of_role("metabolizer")
         slots = self._slots(workers, self.cfg.metabolize_capacity) if workers else []
         for worker, p in zip(slots, nutrients):
+            worker.work += 1
             reply = self._ask(worker, f"{p.text}\nReply with only the answer.", "metabolize")
             ok = p.check(reply)
             stats["solved" if ok else "failed"] += 1
@@ -300,6 +339,7 @@ class World:
                 break
             target = max(targets, key=lambda c: c.damage)
             claimed.add(target.id)
+            repairer.work += 1
             prompt = REPAIR_PROMPT.format(role=target.role, damaged=target.genome,
                                           reference=self._reference(target.role, target, stats))
             new = self._clean_genome(self._ask(repairer, prompt, "repair"))
@@ -312,19 +352,30 @@ class World:
             stats["repaired"] += 1
 
     def _produce(self, stats: Counter) -> None:
-        for producer in list(self._of_role("producer")):
+        producers = self._of_role("producer")
+        if self.cfg.role_policy == "selection":
+            # the fittest lineage gets first claim on scarce energy
+            producers.sort(key=lambda p: (-self.producer_fitness(p), self.rng.random()))
+        for producer in producers:
             # Births only from surplus: the pool must still cover one tick of upkeep afterwards.
             reserve = self.cfg.upkeep * (len(self.cells) + 1)
             if self.pool < self.cfg.birth_cost + reserve or len(self.cells) >= self.cfg.max_population:
                 return
             census = self.census()
-            prompt = CHOOSE_PROMPT.format(census=self._census_report(), pool=self.pool,
-                                          signals=self.cfg.perturbations_per_tick)
-            reply = self._ask(producer, prompt, "choose").lower()
-            role = next((r for r in ROLES if r in reply), None)
-            if role is None:
-                role = min(ROLES, key=lambda r: census[r])
-                stats["choice_fallback"] += 1
+            scarcest = min(ROLES, key=lambda r: (census[r], self.rng.random()))
+            if self.cfg.role_policy == "scarcest":
+                reply, role = "", scarcest
+            else:
+                prompt = CHOOSE_PROMPT.format(census=self._census_report(), pool=self.pool,
+                                              signals=self.cfg.perturbations_per_tick)
+                reply = self._ask(producer, prompt, "choose").lower()
+                role = next((r for r in ROLES if r in reply), None)
+                if role is None:
+                    role = scarcest
+                    stats["choice_fallback"] += 1
+            self.log({"tick": self.tick, "event": "choice", "producer": producer.id, "policy": self.cfg.role_policy,
+                      "census": census, "reply": reply[:200], "role": role,
+                      "fitness": round(self.producer_fitness(producer), 3)})
             prompt = WRITE_PROMPT.format(role=role, reference=self._reference(role, None, stats))
             genome = self._clean_genome(self._ask(producer, prompt, "write"))
             if genome is None:
@@ -332,6 +383,7 @@ class World:
                 continue
             self.pool -= self.cfg.birth_cost
             self._spawn(role, genome, generation=producer.generation + 1, parent=producer.id)
+            producer.work += 1
             stats["born"] += 1
 
     def _metabolism_upkeep(self) -> None:
@@ -375,6 +427,10 @@ class World:
             # share of all repairs/births so far that drew only on genomes inside the network
             "template_closure": round(internal / (internal + ext), 3) if internal + ext else None,
             "max_generation": max((c.generation for c in self.cells), default=0),
+            # mean share of capacity each role actually used, over its living cells' lives
+            "utilization": {role: round(sum(c.work / c.opportunity for c in cells) / len(cells), 3)
+                            for role in ROLES
+                            if (cells := [c for c in self._of_role(role) if c.opportunity])},
             "stats": dict(stats or {}),
         }
 

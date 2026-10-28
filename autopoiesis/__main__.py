@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from .llm import MockBackend, OllamaBackend
-from .world import Config, World
+from .world import POLICIES, Config, World
 
 
 def main() -> None:
@@ -23,11 +23,14 @@ def main() -> None:
     ap.add_argument("--toxin-rate", type=float, default=Config.toxin_rate)
     ap.add_argument("--decay-rate", type=float, default=Config.decay_rate)
     ap.add_argument("--max-age", type=int, default=Config.max_age)
+    ap.add_argument("--policy", choices=POLICIES, default=Config.role_policy,
+                    help="how producers choose the role of a new cell")
     ap.add_argument("--out", type=Path, default=Path("runs"))
     args = ap.parse_args()
 
     llm = MockBackend(args.seed) if args.mock else OllamaBackend(args.model, args.host, args.temperature)
-    cfg = Config(toxin_rate=args.toxin_rate, decay_rate=args.decay_rate, max_age=args.max_age)
+    cfg = Config(toxin_rate=args.toxin_rate, decay_rate=args.decay_rate, max_age=args.max_age,
+                 role_policy=args.policy)
 
     stem = f"{time.strftime('%Y%m%d-%H%M%S')}-seed{args.seed}"
     run_dir, n = args.out / stem, 1
