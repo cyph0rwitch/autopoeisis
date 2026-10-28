@@ -89,9 +89,11 @@ class Config:
     # How producers pick the role of a new cell:
     #   llm       - the producer's model reads the census and decides
     #   scarcest  - hard-coded: the role with the fewest cells (designer regulation)
-    #   selection - llm choice, but producers whose offspring are well-used
-    #               produce first and new producers inherit the fittest genome
+    #   selection - llm choice, but producers whose births were followed by an
+    #               intact organization produce first, and new producers
+    #               inherit the fittest producer's genome
     role_policy: str = "llm"
+    credit_delay: int = 5        # ticks after a birth at which selection checks closure
 
 
 POLICIES = ("llm", "scarcest", "selection")
@@ -161,6 +163,7 @@ class World:
         self.pool = self.cfg.start_pool
         self.cells: list[Cell] = []
         self.archive: list[Cell] = []   # every cell ever born, for lineage fitness
+        self.intact_history: list[bool] = []   # organization_intact at the end of each tick
         self.next_id = 0
         self.totals: Counter = Counter()
 
@@ -211,14 +214,17 @@ class World:
         return min(siblings, key=lambda c: c.damage) if siblings else None
 
     def producer_fitness(self, producer: Cell) -> float:
-        """Mean utilization of a producer's offspring, with a 0.5 prior worth one child.
+        """Share of a producer's births after which the organization was still intact
+        credit_delay ticks later, with a 0.5 prior worth one birth.
 
-        A child that is kept busy was needed; a redundant one (the tenth
-        metabolizer) idles. So this rewards role choices that fit the network's
-        needs without the fitness function itself naming the scarcest role.
+        The credit is whether the whole network kept its closure, not whether the
+        choice matched any rule, so the fitness never names the scarcest role.
+        Births whose window has not closed yet are not scored.
         """
-        utils = [c.work / c.opportunity for c in self.archive if c.parent == producer.id and c.opportunity]
-        return (sum(utils) + 0.5) / (len(utils) + 1)
+        horizon = len(self.intact_history) - self.cfg.credit_delay
+        credits = [self.intact_history[c.born_tick + self.cfg.credit_delay - 1]
+                   for c in self.archive if c.parent == producer.id and c.born_tick <= horizon]
+        return (sum(credits) + 0.5) / (len(credits) + 1)
 
     def _fittest_producer(self) -> Cell | None:
         healthy = [c for c in self._of_role("producer") if c.damage <= 1]
@@ -268,6 +274,7 @@ class World:
         self._metabolism_upkeep()
         self._cull(stats)
         self.totals.update(stats)
+        self.intact_history.append(self.organization_intact())
         return self.metrics(stats)
 
     def _perturbations(self) -> list[Perturbation]:

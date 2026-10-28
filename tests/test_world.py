@@ -85,13 +85,16 @@ class TestWorld(unittest.TestCase):
         w.step()
         self.assertEqual((busy.work, busy.opportunity), (1, 2))
 
-    def test_selection_prefers_producer_with_busy_offspring(self):
-        w = World(MockBackend(0), Config(role_policy="selection"), seed=0)
+    def test_selection_credits_births_followed_by_intact_organization(self):
+        w = World(MockBackend(0), Config(role_policy="selection", credit_delay=2), seed=0)
         good = w._spawn("producer", "You are a producer cell.", 0, None)
         bad = w._spawn("producer", "You are a producer cell.", 0, None)
-        w._spawn("membrane", "m", 1, good.id).__dict__.update(work=9, opportunity=10)
-        w._spawn("metabolizer", "m", 1, bad.id).__dict__.update(work=1, opportunity=10)
-        self.assertGreater(w.producer_fitness(good), w.producer_fitness(bad))
+        w.intact_history = [True, True, True, False, False, False]
+        w._spawn("membrane", "m", 1, good.id).born_tick = 1     # judged at end of tick 3: intact
+        w._spawn("membrane", "m", 1, bad.id).born_tick = 3      # judged at end of tick 5: broken
+        w._spawn("membrane", "m", 1, bad.id).born_tick = 5      # window still open: not scored
+        self.assertEqual(w.producer_fitness(good), 0.75)
+        self.assertEqual(w.producer_fitness(bad), 0.25)
         self.assertIs(w._fittest_producer(), good)
 
     def test_garbage_genome_is_rejected(self):
