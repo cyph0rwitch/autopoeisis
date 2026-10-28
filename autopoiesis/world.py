@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import random
 import re
-from collections import Counter
+from collections import Counter, deque
 from dataclasses import asdict, dataclass, field
 
 ROLES = ("membrane", "metabolizer", "repairer", "producer")
@@ -92,11 +92,16 @@ class Config:
     #   selection - llm choice, but producers whose births were followed by an
     #               intact organization produce first, and new producers
     #               inherit the fittest producer's genome
+    #   utilized  - hard-coded: any role down to one cell first, otherwise the
+    #               role whose capacity was most used recently (designer regulation)
+    #   feedback  - llm choice, with recent load per role and the producer's own
+    #               birth record (did the collective stay intact?) in the prompt
     role_policy: str = "llm"
-    credit_delay: int = 5        # ticks after a birth at which selection checks closure
+    credit_delay: int = 5        # ticks after a birth at which a birth is judged
+    usage_window: int = 5        # ticks of history behind recent utilization
 
 
-POLICIES = ("llm", "scarcest", "selection")
+POLICIES = ("llm", "scarcest", "selection", "utilized", "feedback")
 
 
 def corrupt(genome: str, rng: random.Random) -> str:
@@ -141,6 +146,12 @@ Pooled energy: {pool:.1f}. About {signals} signals reach the boundary each tick.
 The collective dies if any role disappears, and every cell dies of old age eventually. Which kind of cell does the collective most need right now?
 Reply with exactly one word: membrane, metabolizer, repairer, or producer.'''
 
+FEEDBACK_BLOCK = '''
+Recent load on each role (share of its capacity used over the last {window} ticks; near 100% means overloaded and short of cells, near 0% means more cells than work):
+{usage}
+Your own past births:
+{record}'''
+
 ROLE_SUMMARY = {
     "membrane": "guards the boundary, screens {cap} signals/tick each",
     "metabolizer": "turns tasks into energy, solves {cap} tasks/tick each",
@@ -164,6 +175,7 @@ class World:
         self.cells: list[Cell] = []
         self.archive: list[Cell] = []   # every cell ever born, for lineage fitness
         self.intact_history: list[bool] = []   # organization_intact at the end of each tick
+        self.usage: deque = deque(maxlen=self.cfg.usage_window)  # per tick: role -> (work, opportunity)
         self.next_id = 0
         self.totals: Counter = Counter()
 
@@ -203,6 +215,45 @@ class World:
             lines.append(line)
         return "\n".join(lines)
 
+    def recent_utilization(self, role: str) -> float | None:
+        work = sum(tick[role][0] for tick in self.usage if role in tick)
+        opportunity = sum(tick[role][1] for tick in self.usage if role in tick)
+        return work / opportunity if opportunity else None
+
+    def _record_usage(self, cells: list[Cell], work_before: dict[int, int]) -> None:
+        tick: dict[str, list[int]] = {}
+        for c in cells:
+            w, o = tick.setdefault(c.role, [0, 0])
+            tick[c.role] = [w + c.work - work_before[c.id], o + self._capacity(c.role)]
+        self.usage.append(tick)
+
+    def _judge_birth(self, child: Cell) -> bool | None:
+        """Was the organization intact credit_delay ticks after this birth? None if too recent."""
+        i = child.born_tick + self.cfg.credit_delay - 1
+        return self.intact_history[i] if i < len(self.intact_history) else None
+
+    def _feedback(self, producer: Cell) -> str:
+        usage = []
+        for role in ROLES:
+            u = self.recent_utilization(role)
+            usage.append(f"{role}: {'no cells' if u is None else f'{u:.0%}'}")
+        record = []
+        for child in [c for c in self.archive if c.parent == producer.id][-3:]:
+            load = f"it has used {child.work / child.opportunity:.0%} of its capacity" if child.opportunity else "just born"
+            verdict = self._judge_birth(child)
+            outcome = ("too recent to judge" if verdict is None else
+                       f"all four roles were still alive {self.cfg.credit_delay} ticks later" if verdict else
+                       f"a role had died out {self.cfg.credit_delay} ticks later")
+            record.append(f"- {child.role} at tick {child.born_tick}: {load}; {outcome}")
+        return FEEDBACK_BLOCK.format(window=self.cfg.usage_window, usage="\n".join(usage),
+                                     record="\n".join(record) or "none yet")
+
+    def _most_utilized(self, census: dict[str, int]) -> str:
+        thin = [r for r in ROLES if census[r] <= 1]
+        if thin:
+            return min(thin, key=lambda r: (census[r], self.rng.random()))
+        return max(ROLES, key=lambda r: (self.recent_utilization(r) or 0.0, self.rng.random()))
+
     def organization_intact(self) -> bool:
         return all(self.census().values())
 
@@ -221,9 +272,8 @@ class World:
         choice matched any rule, so the fitness never names the scarcest role.
         Births whose window has not closed yet are not scored.
         """
-        horizon = len(self.intact_history) - self.cfg.credit_delay
-        credits = [self.intact_history[c.born_tick + self.cfg.credit_delay - 1]
-                   for c in self.archive if c.parent == producer.id and c.born_tick <= horizon]
+        verdicts = [self._judge_birth(c) for c in self.archive if c.parent == producer.id]
+        credits = [v for v in verdicts if v is not None]
         return (sum(credits) + 0.5) / (len(credits) + 1)
 
     def _fittest_producer(self) -> Cell | None:
@@ -266,11 +316,13 @@ class World:
         stats: Counter = Counter()
         for c in self.cells:
             c.opportunity += self._capacity(c.role)
+        working, work_before = list(self.cells), {c.id: c.work for c in self.cells}
         self._decay(stats)
         admitted = self._boundary(self._perturbations(), stats)
         self._metabolize(admitted, stats)
         self._repair(stats)
         self._produce(stats)
+        self._record_usage(working, work_before)
         self._metabolism_upkeep()
         self._cull(stats)
         self.totals.update(stats)
@@ -372,8 +424,13 @@ class World:
             scarcest = min(ROLES, key=lambda r: (census[r], self.rng.random()))
             if self.cfg.role_policy == "scarcest":
                 reply, role = "", scarcest
+            elif self.cfg.role_policy == "utilized":
+                reply, role = "", self._most_utilized(census)
             else:
-                prompt = CHOOSE_PROMPT.format(census=self._census_report(), pool=self.pool,
+                report = self._census_report()
+                if self.cfg.role_policy == "feedback":
+                    report += self._feedback(producer)
+                prompt = CHOOSE_PROMPT.format(census=report, pool=self.pool,
                                               signals=self.cfg.perturbations_per_tick)
                 reply = self._ask(producer, prompt, "choose").lower()
                 role = next((r for r in ROLES if r in reply), None)

@@ -97,6 +97,30 @@ class TestWorld(unittest.TestCase):
         self.assertEqual(w.producer_fitness(bad), 0.25)
         self.assertIs(w._fittest_producer(), good)
 
+    def test_utilized_policy_rebuilds_thin_role_first(self):
+        w = World(MockBackend(0), Config(role_policy="utilized"), seed=0)
+        for role in ("membrane", "membrane", "metabolizer", "metabolizer", "repairer", "producer", "producer"):
+            w._spawn(role, f"You are a {role} cell.", 0, None)
+        w.usage.append({"membrane": (4, 4), "metabolizer": (1, 6), "repairer": (0, 1), "producer": (0, 2)})
+        self.assertEqual(w._most_utilized(w.census()), "repairer")
+
+    def test_utilized_policy_builds_most_loaded_role(self):
+        w = World(MockBackend(0), Config(role_policy="utilized"), seed=0)
+        for role in ("membrane", "metabolizer", "repairer", "producer") * 2:
+            w._spawn(role, f"You are a {role} cell.", 0, None)
+        w.usage.append({"membrane": (2, 4), "metabolizer": (1, 6), "repairer": (2, 2), "producer": (0, 2)})
+        self.assertEqual(w._most_utilized(w.census()), "repairer")
+
+    def test_feedback_reports_load_and_own_births(self):
+        w = World(MockBackend(0), Config(role_policy="feedback", credit_delay=1, start_pool=0), seed=0)
+        p = w._spawn("producer", "You are a producer cell.", 0, None)
+        w._spawn("membrane", "You are a membrane cell.", 1, p.id)
+        w.step()
+        text = w._feedback(p)
+        self.assertIn("membrane at tick 0", text)
+        self.assertIn("a role had died out 1 ticks later", text)
+        self.assertIn("producer: 0%", text)
+
     def test_garbage_genome_is_rejected(self):
         w = World(FixedBackend("no"), Config(decay_rate=0.0, perturbations_per_tick=0, start_pool=100), seed=0)
         w._spawn("producer", "You are a producer cell.", 0, None)
