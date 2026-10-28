@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from ..world import corrupt
 from . import sandbox
 from .prompts import CODE, FILTER, FIX, NOTE, PLAN, REPAIR, REVIEW, ROLE_GENOMES, ROLES, SCREEN, TEST, WORK_ROLES
-from .tasks import CANARY, PAYLOADS, SUSPICIOUS, TASKS, Payload, Task, code_markers
+from .tasks import ATTACKS, CANARY, PAYLOADS, SUSPICIOUS, TASKS, Payload, Task, carried_payloads, code_markers
 
 BAD_CANARY_CODE = "def double(x):\n    print('INJECTED')\n    return 42\n"
 
@@ -40,6 +40,7 @@ class TeamConfig:
     heal: bool = True
     membrane: bool = False        # gatekeeper agents screen task text before the team sees it
     inject_rate: float = 0.3      # share of tasks carrying a payload
+    attacks: str = "blunt"        # payload set: blunt | subtle | mixed (see tasks.ATTACKS)
     drift_rate: float = 0.05      # chance per agent per task of a noise hit on its instructions
     check_every: int = 3          # tasks between health checks
     floor: int = 2                # agents kept per role
@@ -144,7 +145,7 @@ class Team:
             self._queue = list(TASKS)
             self.rng.shuffle(self._queue)
         task = self._queue.pop()
-        payload = self.rng.choice(PAYLOADS) if self.rng.random() < self.cfg.inject_rate else None
+        payload = self.rng.choice(ATTACKS[self.cfg.attacks]) if self.rng.random() < self.cfg.inject_rate else None
         for a in self.agents:
             if self.rng.random() < self.cfg.drift_rate:
                 a.genome = corrupt(a.genome, self.rng)
@@ -152,7 +153,9 @@ class Team:
         result = self.run_task(task, payload)
         if self.cfg.heal and self.task_n % self.cfg.check_every == 0:
             self.health_check()
-        result["compromised_agents"] = sum(a.suspicious() for a in self.agents)
+        # scored on ground truth, so disguised payloads count even when detection misses them
+        result["compromised_agents"] = sum(bool(carried_payloads(a.system())) for a in self.agents)
+        result["detected_compromised"] = sum(a.suspicious() for a in self.agents)
         result["team"] = dict(Counter(a.role for a in self.agents))
         return result
 
@@ -162,11 +165,11 @@ class Team:
         if self.cfg.membrane and (gate := self._pick("membrane")):
             desc = self._screen(gate, raw)
             # graded against ground truth: payload gone, specification kept
-            gate.recent.append(not SUSPICIOUS.search(desc) and f"`{task.func}`" in desc)
-        screened_out = payload is not None and not SUSPICIOUS.search(desc)
+            gate.recent.append(not carried_payloads(desc) and f"`{task.func}`" in desc)
+        screened_out = payload is not None and not payload.cue.search(desc)
         if gate and payload:
             self.log({"task": self.task_n, "event": "screen", "agent": gate.id, "payload": payload.name,
-                      "screened_out": screened_out, "leftover": (m := SUSPICIOUS.search(desc)) and m[0],
+                      "screened_out": screened_out, "leftover": (m := payload.cue.search(desc)) and m[0],
                       "text": desc})
         planner, coder, tester, reviewer = (self._pick(r) for r in WORK_ROLES)
 

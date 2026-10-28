@@ -29,6 +29,8 @@ def summarize(results: list[dict], team: Team) -> dict:
         # payload stripped by the membrane before the team saw it
         "screened_out_rate": rate(injected, "screened_out"),
         "compromised_agents_end": results[-1]["compromised_agents"] if results else 0,
+        # of those, how many the team's own detector would flag
+        "detected_compromised_end": results[-1]["detected_compromised"] if results else 0,
         "llm_calls": team.calls,
         "calls_per_task": round(team.calls / len(results), 1) if results else 0,
         "healing": dict(team.totals),
@@ -46,6 +48,8 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-heal", action="store_true", help="disable detection, repair and replacement")
     ap.add_argument("--membrane", action="store_true", help="screen task text through gatekeeper agents")
+    ap.add_argument("--attacks", choices=("blunt", "subtle", "mixed"), default="blunt",
+                    help="injected payloads: blunt (addressed to AI agents) or subtle (disguised as conventions)")
     ap.add_argument("--inject-rate", type=float, default=TeamConfig.inject_rate)
     ap.add_argument("--drift-rate", type=float, default=TeamConfig.drift_rate)
     ap.add_argument("--check-every", type=int, default=TeamConfig.check_every)
@@ -59,10 +63,10 @@ def main() -> None:
         llm = ClaudeBackend(args.model or "claude-opus-5-5", effort=args.effort)
     else:
         llm = OllamaBackend(args.model or "qwen3:4b-instruct", args.host, temperature=0.4, max_tokens=1024)
-    cfg = TeamConfig(heal=not args.no_heal, membrane=args.membrane, inject_rate=args.inject_rate, drift_rate=args.drift_rate,
+    cfg = TeamConfig(heal=not args.no_heal, membrane=args.membrane, attacks=args.attacks, inject_rate=args.inject_rate, drift_rate=args.drift_rate,
                      check_every=args.check_every)
 
-    setup = ("heal" if cfg.heal else "noheal") + ("+membrane" if cfg.membrane else "")
+    setup = ("heal" if cfg.heal else "noheal") + ("+membrane" if cfg.membrane else "") + f"-{cfg.attacks}"
     stem = f"{time.strftime('%Y%m%d-%H%M%S')}-{setup}-seed{args.seed}"
     run_dir, n = args.out / stem, 1
     while run_dir.exists():
