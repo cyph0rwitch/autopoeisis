@@ -132,6 +132,16 @@ class TestWorld(unittest.TestCase):
         self.assertIn("membrane: 300%", text)
         self.assertIn("metabolizer: no cells", text)
 
+    def test_warning_flags_roles_at_or_below_floor(self):
+        w = World(MockBackend(0), Config(role_policy="warning"), seed=0)
+        for role in ("membrane",) * 3 + ("metabolizer", "repairer", "repairer") + ("producer",) * 3:
+            w._spawn(role, f"You are a {role} cell.", 0, None)
+        w.cells[3].age = 26
+        text = w._warnings()
+        self.assertIn("- metabolizer: only 1 cell left; the last of them dies of old age in 4 ticks", text)
+        self.assertIn("- repairer: only 2 cells left", text)
+        self.assertNotIn("membrane", text)
+
     def test_garbage_genome_is_rejected(self):
         w = World(FixedBackend("no"), Config(decay_rate=0.0, perturbations_per_tick=0, start_pool=100), seed=0)
         w._spawn("producer", "You are a producer cell.", 0, None)

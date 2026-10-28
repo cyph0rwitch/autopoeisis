@@ -97,6 +97,8 @@ class Config:
     #               (designer regulation)
     #   feedback  - llm choice, with recent load per role and the producer's own
     #               birth record (did the collective stay intact?) in the prompt
+    #   warning   - feedback plus an explicit alert for every role down to
+    #               role_floor cells: the floor as information, not a rule
     # Load = demand / capacity: signals per membrane slot, admitted tasks per
     # metabolizer slot, at-risk cells per repairer slot. Unlike utilization it
     # can exceed 100%, and routine 1-point repairs don't count as demand.
@@ -107,7 +109,7 @@ class Config:
     role_floor: int = 2          # demand policy: rebuild a role down to this many cells first
 
 
-POLICIES = ("llm", "scarcest", "selection", "demand", "feedback")
+POLICIES = ("llm", "scarcest", "selection", "demand", "feedback", "warning")
 
 
 def corrupt(genome: str, rng: random.Random) -> str:
@@ -157,6 +159,10 @@ Recent load on each role (demand divided by capacity over the last {window} tick
 {load}
 Your own past births:
 {record}'''
+
+WARNING_BLOCK = '''
+WARNINGS (roles at risk of disappearing; if any role disappears, the whole collective dies):
+{alerts}'''
 
 ROLE_SUMMARY = {
     "membrane": "guards the boundary, screens {cap} signals/tick each",
@@ -255,6 +261,16 @@ class World:
             record.append(f"- {child.role} at tick {child.born_tick}: {outcome}")
         return FEEDBACK_BLOCK.format(window=self.cfg.load_window, load="\n".join(load),
                                      record="\n".join(record) or "none yet")
+
+    def _warnings(self) -> str:
+        alerts = []
+        for role in ROLES:
+            cells = self._of_role(role)
+            if len(cells) <= self.cfg.role_floor:
+                last = max((self.cfg.max_age - c.age for c in cells), default=0)
+                alerts.append(f"- {role}: only {len(cells)} {'cell' if len(cells) == 1 else 'cells'} left; "
+                              f"the last of them dies of old age in {last} ticks")
+        return WARNING_BLOCK.format(alerts="\n".join(alerts) or "none")
 
     def _most_demanded(self, census: dict[str, int]) -> str | None:
         """The role to build, or None when no role is thin or overloaded (save the energy)."""
@@ -446,8 +462,10 @@ class World:
                     return
             else:
                 report = self._census_report()
-                if self.cfg.role_policy == "feedback":
+                if self.cfg.role_policy in ("feedback", "warning"):
                     report += self._feedback(producer)
+                if self.cfg.role_policy == "warning":
+                    report += self._warnings()
                 prompt = CHOOSE_PROMPT.format(census=report, pool=self.pool,
                                               signals=self.cfg.perturbations_per_tick)
                 reply = self._ask(producer, prompt, "choose").lower()
