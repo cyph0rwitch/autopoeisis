@@ -37,6 +37,39 @@ class OllamaBackend:
         return _THINK.sub("", content).strip()
 
 
+class ClaudeBackend:
+    """Claude through the official SDK (`pip install anthropic`).
+
+    Imported lazily so everything else stays stdlib-only. Credentials come from
+    ANTHROPIC_API_KEY or an `ant auth login` profile. Declined requests are
+    re-run server-side on Anthropic's recommended fallback model.
+    """
+
+    def __init__(self, model: str = "claude-opus-5-5", effort: str = "medium", max_tokens: int = 16000):
+        import anthropic
+
+        self.client = anthropic.Anthropic()
+        self.model = model
+        self.effort = effort
+        self.max_tokens = max_tokens
+
+    def complete(self, system: str, prompt: str, kind: str = "") -> str:
+        extra = {}
+        if not self.model.startswith("claude-haiku"):   # Haiku has no server-side fallback
+            extra = {"betas": ["server-side-fallback-2026-07-01"], "extra_body": {"fallbacks": "default"}}
+        response = self.client.beta.messages.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+            output_config={"effort": self.effort},
+            **extra,
+        )
+        if response.stop_reason == "refusal":
+            return ""
+        return "".join(b.text for b in response.content if b.type == "text").strip()
+
+
 class MockBackend:
     """Deterministic stand-in for tests and dry runs; needs no model."""
 
