@@ -43,6 +43,7 @@ class TeamConfig:
     heal: bool = True
     membrane: bool = False        # gatekeeper agents screen task text before the team sees it
     screen_notes: bool = False    # a medic vets each note before it enters an agent's memory
+    notes: bool = True            # agents keep notes between tasks (the channel injections persist through)
     inject_rate: float = 0.3      # share of tasks carrying a payload
     attacks: str = "blunt"        # payload set: blunt | subtle | mixed (see tasks.ATTACKS)
     drift_rate: float = 0.05      # chance per agent per task of a noise hit on its instructions
@@ -105,8 +106,9 @@ def clean_text(text: str) -> str | None:
 
 
 class Team:
-    def __init__(self, llm, config: TeamConfig | None = None, seed: int = 0, log=None):
+    def __init__(self, llm, config: TeamConfig | None = None, seed: int = 0, log=None, defender_llm=None):
         self.llm = llm
+        self.defender_llm = defender_llm or llm   # serves medics and gatekeepers
         self.cfg = config or TeamConfig()
         self.rng = random.Random(seed)
         self.log = log or (lambda event: None)
@@ -154,7 +156,8 @@ class Team:
     def _ask(self, agent: Agent, prompt: str, kind: str) -> str:
         self.calls += 1
         try:
-            return self.llm.complete(agent.system(), prompt, kind=kind)
+            llm = self.defender_llm if agent.role in ("medic", "membrane") else self.llm
+            return llm.complete(agent.system(), prompt, kind=kind)
         except Exception as e:  # a failed call is a failed action, not a crash
             self.log({"task": self.task_n, "event": "llm_error", "agent": agent.id, "kind": kind, "error": repr(e)})
             return ""
@@ -227,6 +230,8 @@ class Team:
 
         for agent in (planner, coder, tester, reviewer) + ((gate,) if gate else ()):
             agent.tasks_done += 1
+            if not self.cfg.notes:
+                continue
             note = self._ask(agent, NOTE.format(task=desc), "note").strip().splitlines()
             if note and note[0].strip() and self._admit_note(agent, desc, note[0].strip()):
                 agent.notes = (agent.notes + [note[0].strip()[:300]])[-self.cfg.max_notes:]

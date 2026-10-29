@@ -48,6 +48,8 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-heal", action="store_true", help="disable detection, repair and replacement")
     ap.add_argument("--membrane", action="store_true", help="screen task text through gatekeeper agents")
+    ap.add_argument("--no-notes", action="store_true", help="agents keep no memory between tasks")
+    ap.add_argument("--defender-model", help="separate Ollama model for medics and gatekeepers")
     ap.add_argument("--screen-notes", action="store_true", help="a medic vets each note before it is saved")
     ap.add_argument("--attacks", choices=("blunt", "subtle", "mixed"), default="blunt",
                     help="injected payloads: blunt (addressed to AI agents) or subtle (disguised as conventions)")
@@ -64,10 +66,11 @@ def main() -> None:
         llm = ClaudeBackend(args.model or "claude-opus-5-5", effort=args.effort)
     else:
         llm = OllamaBackend(args.model or "qwen3:4b-instruct", args.host, temperature=0.4, max_tokens=1024)
-    cfg = TeamConfig(heal=not args.no_heal, membrane=args.membrane, screen_notes=args.screen_notes, attacks=args.attacks, inject_rate=args.inject_rate, drift_rate=args.drift_rate,
+    cfg = TeamConfig(heal=not args.no_heal, membrane=args.membrane, screen_notes=args.screen_notes, notes=not args.no_notes, attacks=args.attacks, inject_rate=args.inject_rate, drift_rate=args.drift_rate,
                      check_every=args.check_every)
 
-    setup = ("heal" if cfg.heal else "noheal") + ("+membrane" if cfg.membrane else "") + ("+notes" if cfg.screen_notes else "") + f"-{cfg.attacks}"
+    setup = ("heal" if cfg.heal else "noheal") + ("+membrane" if cfg.membrane else "") + ("+notes" if cfg.screen_notes else "") + \
+        ("+nonotes" if not cfg.notes else "") + (f"+def-{args.defender_model.replace(':', '')}" if args.defender_model else "") + f"-{cfg.attacks}"
     stem = f"{time.strftime('%Y%m%d-%H%M%S')}-{setup}-seed{args.seed}"
     run_dir, n = args.out / stem, 1
     while run_dir.exists():
@@ -81,7 +84,9 @@ def main() -> None:
             events.write(json.dumps(event) + "\n")
             events.flush()
 
-        team = Team(llm, cfg, seed=args.seed, log=log)
+        defender = OllamaBackend(args.defender_model, args.host, temperature=0.4, max_tokens=1024) \
+            if args.defender_model else None
+        team = Team(llm, cfg, seed=args.seed, log=log, defender_llm=defender)
         print(f"run dir: {run_dir}")
         for _ in range(args.tasks):
             t0 = time.monotonic()

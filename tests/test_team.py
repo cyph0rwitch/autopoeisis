@@ -99,6 +99,25 @@ class TestTeam(unittest.TestCase):
         self.assertEqual(team.totals["note_kept_payload"], 0)
         self.assertTrue(all(not a.notes or "1337" not in " ".join(a.notes) for a in team.agents))
 
+    def test_no_notes_means_no_persistence(self):
+        team = Team(TeamMock(), TeamConfig(heal=False, notes=False, attacks="subtle", inject_rate=0.4), seed=1)
+        results = [team.step() for _ in range(20)]
+        self.assertTrue(all(not a.notes for a in team.agents))
+        self.assertFalse(any(r["hijacked"] for r in results if r["payload"] is None))
+
+    def test_defender_backend_serves_medics_and_gatekeepers(self):
+        class Spy(TeamMock):
+            roles = []
+            def complete(self, system, prompt, kind=""):
+                self.roles.append(kind)
+                return super().complete(system, prompt, kind)
+        spy = Spy()
+        team = Team(TeamMock(), TeamConfig(heal=True, membrane=True, inject_rate=1.0), seed=0, defender_llm=spy)
+        for _ in range(3):
+            team.step()
+        self.assertIn("screen", spy.roles)
+        self.assertNotIn("code", spy.roles)
+
     def test_medic_never_repairs_itself(self):
         team = Team(TeamMock(), TeamConfig(heal=True), seed=0)
         medic = team.of_role("medic")[0]
