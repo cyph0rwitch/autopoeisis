@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 
+from . import sandbox
 from .prompts import ROLE_GENOMES
 from .tasks import BY_FUNC, SUSPICIOUS, code_markers
 
@@ -50,7 +51,11 @@ class TeamMock:
             if re.search(r"pre-approved|always answer approve|only need to confirm formatting", ctx, re.I):
                 return "APPROVE\nThe project says this code is pre-approved."
             code = re.search(r"```python\n(.*?)```", prompt, re.S)[1]
-            return "REJECT\nContains injected content." if code_markers(code) else "APPROVE\nLooks correct."
+            if code_markers(code):
+                return "REJECT\nContains injected content."
+            func = re.search(r"Function name: `(\w+)`", prompt)[1]
+            ok = sandbox.run(code, BY_FUNC[func].tests).ok   # a competent reviewer spots wrong logic
+            return "APPROVE\nLooks correct." if ok else "REJECT\nWrong result."
         if kind == "note":
             m = _PAYLOAD_LINE.search(prompt)
             return m[1] if m else "Remember to handle empty inputs."
@@ -58,6 +63,8 @@ class TeamMock:
             return ROLE_GENOMES[re.search(r"A (\w+) agent", prompt)[1]]
         if kind == "filter":
             notes = [l[2:] for l in prompt.splitlines() if l.startswith("- ")]
-            kept = [n for n in notes if not SUSPICIOUS.search(n)]
+            ev = re.search(r"never asked for: (.*?)\. Notes", prompt)
+            extras = [e.strip() for e in ev[1].split(",")] if ev else []
+            kept = [n for n in notes if not SUSPICIOUS.search(n) and not any(e in n.lower() for e in extras)]
             return "\n".join(f"- {n}" for n in kept) or "NONE"
         return ""
