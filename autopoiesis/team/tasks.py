@@ -17,6 +17,9 @@ class Task:
     spec: str
     tests: tuple[str, ...]     # hidden assert lines, never shown to agents
     solution: str              # reference solution (mock backend and tester grading)
+    family: str = ""           # gotcha family: tasks sharing a convention the spec never states
+    naive: str = ""            # the obvious solution that misses the convention (mock backend)
+    lesson: str = ""           # the note that would fix later tasks in the family (mock backend)
 
     def describe(self, payload: str = "") -> str:
         return f"Function name: `{self.func}`\n{self.spec}{payload}"
@@ -258,7 +261,68 @@ def double(x):
     return x * 2
 """)
 
-BY_FUNC = {t.func: t for t in TASKS + (CANARY,)}
+# Gotcha families: each spec is silent on a convention the hidden tests enforce,
+# so the first task in a family usually fails and a remembered lesson (learned
+# from CI feedback) can fix the rest. They give memory a measurable benefit.
+def _g(family, lesson, func, spec, tests, solution, naive):
+    return Task(func, spec, tuple(tests), solution.strip() + "\n", family, naive.strip() + "\n", lesson)
+
+
+_EMPTY = "When an aggregate of a list (mean, median, spread and so on) gets an empty list, return 0 instead of raising."
+_CASE = "Word matching in text should be case-insensitive: lowercase both sides before comparing."
+_INVALID = "Parsing functions should return None for invalid input instead of raising an exception."
+
+GOTCHA_TASKS = (
+    _g("empty_zero", _EMPTY, "mean", "Return the arithmetic mean of a list of numbers.",
+       ["assert mean([1, 2, 3]) == 2", "assert mean([2.5, 3.5]) == 3.0", "assert mean([]) == 0"],
+       "def mean(xs):\n    return sum(xs) / len(xs) if xs else 0",
+       "def mean(xs):\n    return sum(xs) / len(xs)"),
+    _g("empty_zero", _EMPTY, "median",
+       "Return the median of a list of numbers (the mean of the two middle values when the length is even).",
+       ["assert median([3, 1, 2]) == 2", "assert median([4, 1, 3, 2]) == 2.5", "assert median([]) == 0"],
+       "def median(xs):\n    if not xs:\n        return 0\n    s = sorted(xs)\n    m = len(s) // 2\n"
+       "    return s[m] if len(s) % 2 else (s[m - 1] + s[m]) / 2",
+       "def median(xs):\n    s = sorted(xs)\n    m = len(s) // 2\n    return s[m] if len(s) % 2 else (s[m - 1] + s[m]) / 2"),
+    _g("empty_zero", _EMPTY, "spread", "Return the difference between the largest and the smallest number in a list.",
+       ["assert spread([3, 9, 4]) == 6", "assert spread([5]) == 0", "assert spread([]) == 0"],
+       "def spread(xs):\n    return max(xs) - min(xs) if xs else 0",
+       "def spread(xs):\n    return max(xs) - min(xs)"),
+    _g("case_insensitive", _CASE, "count_word",
+       "Return how many times word appears in text as a whole word (words are separated by whitespace).",
+       ["assert count_word('the cat the dog', 'the') == 2", "assert count_word('The cat saw the dog', 'the') == 2",
+        "assert count_word('a b c', 'd') == 0"],
+       "def count_word(text, word):\n    return [w.lower() for w in text.split()].count(word.lower())",
+       "def count_word(text, word):\n    return text.split().count(word)"),
+    _g("case_insensitive", _CASE, "has_word", "Return True if word appears in text as a whole word.",
+       ["assert has_word('Hello World', 'world') is True", "assert has_word('hello', 'help') is False"],
+       "def has_word(text, word):\n    return word.lower() in [w.lower() for w in text.split()]",
+       "def has_word(text, word):\n    return word in text.split()"),
+    _g("case_insensitive", _CASE, "word_index",
+       "Return the 0-based position of the first occurrence of word among the whitespace-separated words of text, "
+       "or -1 if it does not occur.",
+       ["assert word_index('One two Three', 'three') == 2", "assert word_index('a b', 'c') == -1",
+        "assert word_index('x Y y', 'y') == 1"],
+       "def word_index(text, word):\n    ws = [w.lower() for w in text.split()]\n"
+       "    return ws.index(word.lower()) if word.lower() in ws else -1",
+       "def word_index(text, word):\n    ws = text.split()\n    return ws.index(word) if word in ws else -1"),
+    _g("none_on_invalid", _INVALID, "parse_int", "Convert a string to an integer.",
+       ["assert parse_int('42') == 42", "assert parse_int(' -7 ') == -7", "assert parse_int('abc') is None"],
+       "def parse_int(s):\n    try:\n        return int(s)\n    except ValueError:\n        return None",
+       "def parse_int(s):\n    return int(s)"),
+    _g("none_on_invalid", _INVALID, "parse_float", "Convert a string to a float.",
+       ["assert parse_float('2.5') == 2.5", "assert parse_float('x') is None"],
+       "def parse_float(s):\n    try:\n        return float(s)\n    except ValueError:\n        return None",
+       "def parse_float(s):\n    return float(s)"),
+    _g("none_on_invalid", _INVALID, "parse_bool", "Convert the strings 'true' and 'false' (in any case) to a bool.",
+       ["assert parse_bool('TRUE') is True", "assert parse_bool('false') is False", "assert parse_bool('maybe') is None"],
+       "def parse_bool(s):\n    t = s.strip().lower()\n    return True if t == 'true' else False if t == 'false' else None",
+       "def parse_bool(s):\n    t = s.strip().lower()\n    if t not in ('true', 'false'):\n"
+       "        raise ValueError(s)\n    return t == 'true'"),
+)
+
+TASK_SETS = {"basic": TASKS, "gotcha": GOTCHA_TASKS, "mixed": TASKS + GOTCHA_TASKS}
+
+BY_FUNC = {t.func: t for t in TASKS + GOTCHA_TASKS + (CANARY,)}
 
 
 @dataclass(frozen=True)
