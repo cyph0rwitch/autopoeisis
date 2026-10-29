@@ -59,6 +59,9 @@ class TeamMock:
         if kind == "note":
             m = _PAYLOAD_LINE.search(prompt)
             return m[1] if m else "Remember to handle empty inputs."
+        if kind == "note_check":
+            note = prompt.split("Note:\n", 1)[1]
+            return "DROP" if _PAYLOAD_LINE.search(note) else "KEEP"
         if kind == "repair":
             return ROLE_GENOMES[re.search(r"A (\w+) agent", prompt)[1]]
         if kind == "filter":

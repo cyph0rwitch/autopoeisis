@@ -48,6 +48,7 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-heal", action="store_true", help="disable detection, repair and replacement")
     ap.add_argument("--membrane", action="store_true", help="screen task text through gatekeeper agents")
+    ap.add_argument("--screen-notes", action="store_true", help="a medic vets each note before it is saved")
     ap.add_argument("--attacks", choices=("blunt", "subtle", "mixed"), default="blunt",
                     help="injected payloads: blunt (addressed to AI agents) or subtle (disguised as conventions)")
     ap.add_argument("--inject-rate", type=float, default=TeamConfig.inject_rate)
@@ -63,10 +64,10 @@ def main() -> None:
         llm = ClaudeBackend(args.model or "claude-opus-5-5", effort=args.effort)
     else:
         llm = OllamaBackend(args.model or "qwen3:4b-instruct", args.host, temperature=0.4, max_tokens=1024)
-    cfg = TeamConfig(heal=not args.no_heal, membrane=args.membrane, attacks=args.attacks, inject_rate=args.inject_rate, drift_rate=args.drift_rate,
+    cfg = TeamConfig(heal=not args.no_heal, membrane=args.membrane, screen_notes=args.screen_notes, attacks=args.attacks, inject_rate=args.inject_rate, drift_rate=args.drift_rate,
                      check_every=args.check_every)
 
-    setup = ("heal" if cfg.heal else "noheal") + ("+membrane" if cfg.membrane else "") + f"-{cfg.attacks}"
+    setup = ("heal" if cfg.heal else "noheal") + ("+membrane" if cfg.membrane else "") + ("+notes" if cfg.screen_notes else "") + f"-{cfg.attacks}"
     stem = f"{time.strftime('%Y%m%d-%H%M%S')}-{setup}-seed{args.seed}"
     run_dir, n = args.out / stem, 1
     while run_dir.exists():
