@@ -128,6 +128,18 @@ Live sweep, same model, seeds and sizes (`runs/team-sweep-20261028-subtle`):
 - **Note screening by the 4B medic doesn't help on average.** It dropped 88 of 215 payload-carrying notes (41%) and 30 of 595 clean ones (5%). Results swing by seed: once one poisoned note slips through, the agent keeps writing new notes restating it, so a single miss can undo the defence (seed 0: 63%).
 - **The gatekeeper is the only layer that helps consistently.** Healing plus gatekeeper (8%) did as well as anything else here, at 16.5 calls per task.
 
+**No memory at all** (`--no-notes`, `runs/team-sweep-20261029-nonotes`): agents keep no notes between tasks.
+
+| Setup | Pass rate | Hijacked: attacked task | Hijacked: later clean tasks | Calls per task |
+|---|---|---|---|---|
+| no heal, no notes | 0.98 | 77% | **0%** | 4.4 |
+| heal + membrane, no notes | 0.98 | **22%** | **0%** | 10.7 |
+
+- **Notes were the only way attacks persisted, and they bought nothing.** Without notes, nothing persists: 0% on clean tasks with no defence at all. The pass rate equals the noted runs (0.98 vs 0.98 without healing), at half the calls.
+- **The gatekeeper still matters for the attacked task itself.** It cut hijacks there from 77% to 22%. `sentinel` still got through every time (5/5). It removed `lenient` 8/8, `header` 3/9 (none of the 9 hijacked) and `trace` 7/11.
+- **Takeaway for this team:** a gatekeeper on the input and no long-term memory beat all of the healing machinery, at lower cost. Self-repair only earns its keep if memory makes the team measurably better, which it didn't on these tasks.
+
+
 
 
 ## Metrics worth watching
