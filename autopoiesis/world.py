@@ -99,6 +99,10 @@ class Config:
     #               birth record (did the collective stay intact?) in the prompt
     #   warning   - feedback plus an explicit alert for every role down to
     #               role_floor cells: the floor as information, not a rule
+    #   critical  - llm choice on the plain census, plus an alert only for a role
+    #               in real danger: one cell left, or its last cell dies of old
+    #               age within critical_horizon ticks. Silent otherwise, so the
+    #               alert carries information (warning fired on every role from tick 1)
     # Load = demand / capacity: signals per membrane slot, admitted tasks per
     # metabolizer slot, at-risk cells per repairer slot. Unlike utilization it
     # can exceed 100%, and routine 1-point repairs don't count as demand.
@@ -107,9 +111,10 @@ class Config:
     load_window: int = 5         # ticks of history behind recent load
     at_risk_damage: int = 3      # damage at which a cell counts as repair demand
     role_floor: int = 2          # demand policy: rebuild a role down to this many cells first
+    critical_horizon: int = 8    # critical policy: alert when a role's last cell dies within this many ticks
 
 
-POLICIES = ("llm", "scarcest", "selection", "demand", "feedback", "warning")
+POLICIES = ("llm", "scarcest", "selection", "demand", "feedback", "warning", "critical")
 
 
 def corrupt(genome: str, rng: random.Random) -> str:
@@ -162,6 +167,10 @@ Your own past births:
 
 WARNING_BLOCK = '''
 WARNINGS (roles at risk of disappearing; if any role disappears, the whole collective dies):
+{alerts}'''
+
+CRITICAL_BLOCK = '''
+CRITICAL (a role is about to disappear; if any role disappears, the whole collective dies):
 {alerts}'''
 
 ROLE_SUMMARY = {
@@ -271,6 +280,23 @@ class World:
                 alerts.append(f"- {role}: only {len(cells)} {'cell' if len(cells) == 1 else 'cells'} left; "
                               f"the last of them dies of old age in {last} ticks")
         return WARNING_BLOCK.format(alerts="\n".join(alerts) or "none")
+
+    def extinction_eta(self, role: str) -> int:
+        """Ticks until the role's last cell dies of old age (0 if the role is gone)."""
+        return max((self.cfg.max_age - c.age for c in self._of_role(role)), default=0)
+
+    def critical_roles(self) -> list[str]:
+        """Roles in real danger: one cell left, or extinct by old age within critical_horizon ticks."""
+        return [r for r in ROLES if len(self._of_role(r)) == 1 or
+                0 < self.extinction_eta(r) <= self.cfg.critical_horizon]
+
+    def _critical(self) -> str:
+        alerts = []
+        for role in self.critical_roles():
+            n = len(self._of_role(role))
+            alerts.append(f"- {role}: {n} {'cell' if n == 1 else 'cells'} left; the last of them dies of old age "
+                          f"in {self.extinction_eta(role)} ticks")
+        return CRITICAL_BLOCK.format(alerts="\n".join(alerts)) if alerts else ""
 
     def _most_demanded(self, census: dict[str, int]) -> str | None:
         """The role to build, or None when no role is thin or overloaded (save the energy)."""
@@ -446,45 +472,70 @@ class World:
         if self.cfg.role_policy == "selection":
             # the fittest lineage gets first claim on scarce energy
             producers.sort(key=lambda p: (-self.producer_fitness(p), self.rng.random()))
+        # One record per tick of what production could do and why it stopped, so a
+        # collapse can be attributed to regulation (energy spent on the wrong roles)
+        # or to energy (nothing affordable).
+        gate = {"tick": self.tick, "event": "produce_tick", "producers": len(producers),
+                "pool": round(self.pool, 2), "census": self.census(),
+                "eta": {r: self.extinction_eta(r) for r in ROLES}, "critical": self.critical_roles(),
+                "decisions": 0, "births": 0, "stopped": "no_producers" if not producers else "done"}
         for producer in producers:
             # Births only from surplus: the pool must still cover one tick of upkeep afterwards.
             reserve = self.cfg.upkeep * (len(self.cells) + 1)
-            if self.pool < self.cfg.birth_cost + reserve or len(self.cells) >= self.cfg.max_population:
-                return
+            if len(self.cells) >= self.cfg.max_population:
+                gate["stopped"] = "max_population"
+                break
+            if self.pool < self.cfg.birth_cost + reserve:
+                gate["stopped"] = "energy"
+                break
             census = self.census()
             scarcest = min(ROLES, key=lambda r: (census[r], self.rng.random()))
+            decision = {"tick": self.tick, "event": "choice", "producer": producer.id,
+                        "policy": self.cfg.role_policy, "census": census, "pool": round(self.pool, 2),
+                        "eta": {r: self.extinction_eta(r) for r in ROLES}, "critical": self.critical_roles(),
+                        "load": {r: self.recent_load(r) for r in ("membrane", "metabolizer", "repairer")},
+                        "scarcest": scarcest, "prompt": "", "reply": "", "fallback": False}
+            gate["decisions"] += 1
             if self.cfg.role_policy == "scarcest":
-                reply, role = "", scarcest
+                role = scarcest
             elif self.cfg.role_policy == "demand":
-                reply, role = "", self._most_demanded(census)
+                role = self._most_demanded(census)
                 if role is None:
                     stats["no_need"] += 1
-                    return
+                    self.log({**decision, "role": None, "outcome": "no_need"})
+                    gate["stopped"] = "no_need"
+                    break
             else:
                 report = self._census_report()
                 if self.cfg.role_policy in ("feedback", "warning"):
                     report += self._feedback(producer)
                 if self.cfg.role_policy == "warning":
                     report += self._warnings()
+                if self.cfg.role_policy == "critical":
+                    report += self._critical()
                 prompt = CHOOSE_PROMPT.format(census=report, pool=self.pool,
                                               signals=self.cfg.perturbations_per_tick)
                 reply = self._ask(producer, prompt, "choose").lower()
                 role = next((r for r in ROLES if r in reply), None)
+                decision.update(prompt=prompt, reply=reply[:300])
                 if role is None:
                     role = scarcest
+                    decision["fallback"] = True
                     stats["choice_fallback"] += 1
-            self.log({"tick": self.tick, "event": "choice", "producer": producer.id, "policy": self.cfg.role_policy,
-                      "census": census, "reply": reply[:200], "role": role,
-                      "fitness": round(self.producer_fitness(producer), 3)})
+            decision.update(role=role, fitness=round(self.producer_fitness(producer), 3))
             prompt = WRITE_PROMPT.format(role=role, reference=self._reference(role, None, stats))
             genome = self._clean_genome(self._ask(producer, prompt, "write"))
             if genome is None:
                 stats["birth_failed"] += 1
+                self.log({**decision, "outcome": "birth_failed"})
                 continue
             self.pool -= self.cfg.birth_cost
             self._spawn(role, genome, generation=producer.generation + 1, parent=producer.id)
             producer.work += 1
             stats["born"] += 1
+            gate["births"] += 1
+            self.log({**decision, "outcome": "born"})
+        self.log(gate)
 
     def _metabolism_upkeep(self) -> None:
         # Cells draw only their upkeep; surplus stays pooled and funds births.

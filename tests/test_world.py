@@ -142,6 +142,35 @@ class TestWorld(unittest.TestCase):
         self.assertIn("- repairer: only 2 cells left", text)
         self.assertNotIn("membrane", text)
 
+    def test_critical_alerts_only_on_real_danger(self):
+        w = World(MockBackend(0), Config(role_policy="critical"), seed=0)
+        for role in ("membrane",) * 2 + ("metabolizer",) + ("repairer",) * 2 + ("producer",) * 2:
+            w._spawn(role, f"You are a {role} cell.", 0, None)
+        w.cells[3].age, w.cells[4].age = 25, 23   # both repairers die within 8 ticks
+        self.assertEqual(w.critical_roles(), ["metabolizer", "repairer"])
+        text = w._critical()
+        self.assertIn("- metabolizer: 1 cell left; the last of them dies of old age in 30 ticks", text)
+        self.assertIn("- repairer: 2 cells left; the last of them dies of old age in 7 ticks", text)
+        self.assertNotIn("membrane", text)
+        for c in w.cells:
+            c.age = 0
+        w._spawn("metabolizer", "You are a metabolizer cell.", 0, None)
+        self.assertEqual(w._critical(), "")   # silent when nothing is in danger
+
+    def test_decisions_are_logged_with_prompt_and_outcome(self):
+        events = []
+        w = World(FixedBackend("metabolizer"), Config(role_policy="critical", decay_rate=0.0,
+                                                      perturbations_per_tick=0, start_pool=100),
+                  seed=0, log=events.append)
+        w._spawn("producer", "You are a producer cell.", 0, None)
+        w._spawn("metabolizer", "You are a metabolizer cell.", 0, None)
+        w.step()
+        choice = next(e for e in events if e["event"] == "choice")
+        self.assertIn("CRITICAL", choice["prompt"])
+        self.assertEqual((choice["role"], choice["outcome"]), ("metabolizer", "birth_failed"))
+        gate = next(e for e in events if e["event"] == "produce_tick")
+        self.assertEqual(gate["decisions"], 1)
+
     def test_garbage_genome_is_rejected(self):
         w = World(FixedBackend("no"), Config(decay_rate=0.0, perturbations_per_tick=0, start_pool=100), seed=0)
         w._spawn("producer", "You are a producer cell.", 0, None)

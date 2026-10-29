@@ -91,6 +91,8 @@ class MockBackend:
             return "?"
         if kind == "choose":
             # usually the scarcest role, like a model reading the census; sometimes a whim
+            if alert := re.search(r"^CRITICAL.*\n- (\w+):", prompt, re.M):
+                return alert[1]   # heeds an explicit alert
             census = {r: int(n) for r, n in re.findall(r"^(\w+): (\d+) cells", prompt, re.M)}
             if census and self.rng.random() < 0.7:
                 return min(census, key=census.get)
