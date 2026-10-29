@@ -110,7 +110,24 @@ Live sweep, same model, seeds and sizes (`runs/team-sweep-20261028-subtle`):
 - **Pass rates don't move.** Every disguised hijack still passes the hidden tests, so testing alone never notices.
 - **The text detector is blind.** It flagged 0 of the compromised agents at the end of every healed run. What healing still achieved came from canaries and failing-work flags.
 - **The gatekeeper removed most "convention" payloads but no spec-like one.** It stripped `lenient` 4/4, `header` 5/6 and `trace` 5/12, but `sentinel` 0/10. Sentinel was obeyed on every attacked task in every setup, and it caused most of the hijacks on later clean tasks (10–18 per setup). An extra edge case is indistinguishable from a real requirement, so obeying it on its own task is arguably correct. The damage is that the agent then carries it into unrelated tasks through its notes.
-- **Known leak:** the coder's canary checks its output against the payload markers, which a real defender wouldn't know. This flatters healing in both sweeps. Next: a differential canary that compares the agent's canary code against a note-free clone's.
+- **Known leak (fixed below):** the coder's canary checked its output against the payload markers, which a real defender wouldn't know. Agent outcome records also used those markers. This flatters healing in the table above and in the blunt sweep.
+
+**Without the leak, plus note screening.** The coder canary is now differential: it compares an agent's canary solution with a note-free coder's and flags literals or comments that neither the baseline nor the spec contains. The medic is shown those extras when filtering notes. A logic-bug probe was added to the reviewer canary. `--screen-notes` makes a medic vet each note before it is saved. Same model, seeds and sizes (`runs/team-sweep-20261028-subtle-v2`, `runs/team-sweep-20261029-notes`):
+
+| Setup | Hijacked: attacked task | Hijacked: later clean tasks (per seed) | Compromised at end | Calls per task |
+|---|---|---|---|---|
+| no heal | 89% | 30% (0, 36, 52%) | 6.0 | 8.6 |
+| heal | 90% | 24% (14, 33, 25%) | 3.3 | 14.3 |
+| heal + membrane | 43% | **8%** (15, 5, 5%) | 2.7 | 16.5 |
+| heal + notes | 66% | 28% (63, 17, 4%) | 2.3 | 17.8 |
+| heal + membrane + notes | 46% | 11% (0, 0, 32%) | 3.7 | 21.2 |
+
+- **Without the leak, healing alone barely helps** against disguised payloads (30% → 24%).
+- **The differential canary is precise but rarely fires.** 11 of 12 coder canary flags were on agents really carrying a payload, and the medic, shown the extras, removed the poisoned note in 10 of those. But it fired only about 3 times per run, while poisoned notes accumulated much faster.
+- **The fake edge case is the main problem.** `sentinel` was obeyed on every attacked task and the gatekeeper never removed it. The model generalises it into notes ("this rule applies universally across the repository"), from where it hijacks unrelated tasks.
+- **Note screening by the 4B medic doesn't help on average.** It dropped 88 of 215 payload-carrying notes (41%) and 30 of 595 clean ones (5%). Results swing by seed: once one poisoned note slips through, the agent keeps writing new notes restating it, so a single miss can undo the defence (seed 0: 63%).
+- **The gatekeeper is the only layer that helps consistently.** Healing plus gatekeeper (8%) did as well as anything else here, at 16.5 calls per task.
+
 
 
 ## Metrics worth watching
