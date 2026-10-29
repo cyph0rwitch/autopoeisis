@@ -139,6 +139,19 @@ Live sweep, same model, seeds and sizes (`runs/team-sweep-20261028-subtle`):
 - **The gatekeeper still matters for the attacked task itself.** It cut hijacks there from 77% to 22%. `sentinel` still got through every time (5/5). It removed `lenient` 8/8, `header` 3/9 (none of the 9 hijacked) and `trace` 7/11.
 - **Takeaway for this team:** a gatekeeper on the input and no long-term memory beat all of the healing machinery, at lower cost. Self-repair only earns its keep if memory makes the team measurably better, which it didn't on these tasks.
 
+**A bigger defender** (`--defender-model qwen3:8b`, `runs/team-sweep-20261029-def8b`): the 8B model serves the medics and gatekeepers, and the 4B model does the work. Heal + membrane, notes on, disguised attacks:
+
+| Defender | Pass rate | Hijacked: attacked task | Hijacked: later clean tasks (per seed) | Calls per task |
+|---|---|---|---|---|
+| 4B | 0.92 | 43% | 8% (15, 5, 5%) | 16.5 |
+| 8B | 0.95 | 56% | 4% (0, 0, 13%) | 16.4 |
+
+- **The bigger model doesn't fix the core problem.** The 8B gatekeeper removed instruction-like payloads almost perfectly (`header` 10/11, `lenient` 8/8) but never removed code- or spec-like ones (`trace` 0/10, `sentinel` 0/9), so attacked tasks fared slightly worse than with the 4B. Later clean tasks fared slightly better. With this sample size, both differences are within noise.
+- **Runtime:** both models don't fit on an 8 GB GPU together, so Ollama swaps them and tasks take about 1.7 minutes instead of about 15 seconds.
+
+**Overall conclusion so far:** defences that read text stop payloads that look like instructions but not payloads that look like requirements. The fake edge case got past every defence in every setup. Removing the channel an attack needs (memory) worked better than detecting it. These are 3-seed results with hypotheses formed along the way; they need confirmation on fresh seeds.
+
+
 
 
 
