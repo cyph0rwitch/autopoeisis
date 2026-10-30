@@ -120,6 +120,18 @@ If `critical` meets its prediction while `llm` keeps collapsing, the next step s
 
 **Added arm (pre-registered 2026-10-30, before its runs):** free notes plus detection-based healing (`--ci-feedback`, healing on, same seeds). This compares closing the memory channel with detecting what flows through it, on the same tasks. Prediction: healing leaves clean-task hijacks well above the no-notes arm (at least 5 percentage points higher on the mean), and costs more calls per task than either the no-notes arm or the filtered arm.
 
+## Using the memory guard in your own agents
+
+`autopoiesis/memory_guard.py` is a standalone, stdlib-only component that packages the main result: guard the channel an injection persists through, not the wording of what flows through it. Modes: `none` (no long-term memory), `filtered` (refuse notes carrying literals that only ever appeared in untrusted input), `free` (baseline). Usage is in the module docstring.
+
+To compare team setups with 95% bootstrap intervals over seeds:
+
+```bash
+python -m autopoiesis.team.report runs/exp3-memory runs/exp5-swarm
+```
+
+Long runs: `scripts/jobqueue.sh JOBS LOG` runs a file of commands one at a time (lines can be appended while it runs; a `STOP` file next to the jobs file ends it after the current job). `scripts/thermal_guard.sh LOG 84 78 87` pauses experiment processes while the GPU has been at 84°C or above for 2 minutes, resumes them at 78°C, and stops everything at 87°C.
+
 ## Experiment 5 (pre-registered 2026-10-30): swarm memory
 
 **Question.** Real multi-agent systems often share one memory (a scratchpad, a knowledge base). With `--shared-memory`, every agent reads and writes one team board of 10 notes, so one poisoned note reaches every agent at once. Does closing or filtering the channel still beat detecting what flows through it?
