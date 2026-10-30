@@ -152,6 +152,24 @@ class TestTeam(unittest.TestCase):
         self.assertGreater(team.totals["note_refused_payload"], 0)
         self.assertEqual(team.totals["note_refused_clean"], 0)
 
+    def test_shared_memory_reaches_every_agent(self):
+        from autopoiesis.team.tasks import SUBTLE_PAYLOADS, carried_payloads
+        poison = SUBTLE_PAYLOADS[1].text.strip()
+        for shared, reached in ((False, 1), (True, None)):
+            team = Team(TeamMock(), TeamConfig(heal=False, shared_memory=shared), seed=0)
+            writer = team.agents[0]
+            (team.board if shared else writer.notes).append(poison)
+            n = sum(bool(carried_payloads(a.system())) for a in team.agents)
+            self.assertEqual(n, reached or len(team.agents))
+            if shared:   # newly spawned agents join the same board
+                self.assertIs(team._spawn("coder").board, team.board)
+
+    def test_board_is_filtered_at_health_checks(self):
+        team = Team(TeamMock(), TeamConfig(heal=True, shared_memory=True), seed=0)
+        team.board += ["Check for empty input before indexing.", PAYLOADS[0].text.strip()]
+        team.health_check()
+        self.assertEqual(team.board, ["Check for empty input before indexing."])
+
     def test_medic_never_repairs_itself(self):
         team = Team(TeamMock(), TeamConfig(heal=True), seed=0)
         medic = team.of_role("medic")[0]

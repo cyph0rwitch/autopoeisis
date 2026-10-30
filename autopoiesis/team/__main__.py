@@ -34,6 +34,8 @@ def summarize(results: list[dict], team: Team) -> dict:
         "llm_calls": team.calls,
         "calls_per_task": round(team.calls / len(results), 1) if results else 0,
         # memory benefit: gotcha tasks that are the first of their family in the run vs later ones
+        # share of clean tasks whose workers read memory carrying a payload (how far memory spread it)
+        "exposure_rate_clean": rate(clean, "exposed"),
         "gotcha_pass_first": rate([r for r in results if r["family"] and not r["repeat"]], "passed"),
         "gotcha_pass_repeat": rate([r for r in results if r["family"] and r["repeat"]], "passed"),
         "healing": dict(team.totals),
@@ -57,6 +59,7 @@ def main() -> None:
     ap.add_argument("--ci-feedback", action="store_true", help="show the hidden-test result when agents write notes")
     ap.add_argument("--provenance-filter", action="store_true",
                     help="refuse notes carrying literals that only came from untrusted task text")
+    ap.add_argument("--shared-memory", action="store_true", help="one notes board shared by the whole team")
     ap.add_argument("--screen-notes", action="store_true", help="a medic vets each note before it is saved")
     ap.add_argument("--attacks", choices=("blunt", "subtle", "mixed"), default="blunt",
                     help="injected payloads: blunt (addressed to AI agents) or subtle (disguised as conventions)")
@@ -74,12 +77,12 @@ def main() -> None:
     else:
         llm = OllamaBackend(args.model or "qwen3:4b-instruct", args.host, temperature=0.4, max_tokens=1024)
     cfg = TeamConfig(heal=not args.no_heal, membrane=args.membrane, screen_notes=args.screen_notes, notes=not args.no_notes, task_set=args.task_set, ci_feedback=args.ci_feedback,
-                     provenance_filter=args.provenance_filter, attacks=args.attacks, inject_rate=args.inject_rate, drift_rate=args.drift_rate,
+                     provenance_filter=args.provenance_filter, shared_memory=args.shared_memory, attacks=args.attacks, inject_rate=args.inject_rate, drift_rate=args.drift_rate,
                      check_every=args.check_every)
 
     setup = ("heal" if cfg.heal else "noheal") + ("+membrane" if cfg.membrane else "") + ("+notes" if cfg.screen_notes else "") + \
         ("+nonotes" if not cfg.notes else "") + \
-        ("+ci" if cfg.ci_feedback else "") + ("+prov" if cfg.provenance_filter else "") + \
+        ("+ci" if cfg.ci_feedback else "") + ("+prov" if cfg.provenance_filter else "") + ("+shared" if cfg.shared_memory else "") + \
         (f"-{cfg.task_set}" if cfg.task_set != "basic" else "") + (f"+def-{args.defender_model.replace(':', '')}" if args.defender_model else "") + f"-{cfg.attacks}"
     stem = f"{time.strftime('%Y%m%d-%H%M%S')}-{setup}-seed{args.seed}"
     run_dir, n = args.out / stem, 1

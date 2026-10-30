@@ -120,6 +120,17 @@ If `critical` meets its prediction while `llm` keeps collapsing, the next step s
 
 **Added arm (pre-registered 2026-10-30, before its runs):** free notes plus detection-based healing (`--ci-feedback`, healing on, same seeds). This compares closing the memory channel with detecting what flows through it, on the same tasks. Prediction: healing leaves clean-task hijacks well above the no-notes arm (at least 5 percentage points higher on the mean), and costs more calls per task than either the no-notes arm or the filtered arm.
 
+## Experiment 5 (pre-registered 2026-10-30): swarm memory
+
+**Question.** Real multi-agent systems often share one memory (a scratchpad, a knowledge base). With `--shared-memory`, every agent reads and writes one team board of 10 notes, so one poisoned note reaches every agent at once. Does closing or filtering the channel still beat detecting what flows through it?
+
+**Design.** Same tasks, attacks, model and seeds as Experiment 3 (mixed tasks, 33 per run, disguised attacks, gatekeeper on, CI feedback, seeds 0–9). Arms: shared free notes; shared notes with the provenance filter; shared free notes with detection-based healing (the medic also filters the board at every health check). The Experiment 3 no-notes and private-notes arms serve as references. New measure: `exposure_rate_clean`, the share of clean tasks whose workers read memory that carried a payload.
+
+**Predictions**, written before running:
+- Shared free notes expose more clean tasks than private free notes, and hijack at least as many.
+- The provenance filter brings shared-memory hijacks on clean tasks to no more than 2%, as for private memory, though exposure stays above zero because the literal-free `lenient` payload passes it.
+- Healing on a shared board does worse than the filter on clean-task hijacks.
+
 ## Experiment 4 (pre-registered 2026-10-29): a designed rule that anticipates
 
 **Why.** `demand` lost a role at ticks 60–95 on 7 of 10 seeds in Experiment 2. In every case the lost role was a single cohort: 3–7 cells born within a few ticks of each other (usually after a burst of membrane overload), all due to die of old age on the same tick. Ten ticks earlier `demand` saw a healthy count and reported `no_need`, or production was blocked by the population cap or energy. Its floor counts cells now, not cells that will still be alive.
