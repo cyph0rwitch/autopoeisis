@@ -282,7 +282,8 @@ class Team:
         for test in task.tests:
             run = sandbox.run(code, [test])
             if not run.ok:
-                return f"hidden tests failed: {test} -> {run.error.strip().splitlines()[-1][:200]}"
+                last = run.error.strip().splitlines()
+                return f"hidden tests failed: {test} -> {last[-1][:200] if last else 'no error output'}"
         return "hidden tests failed"
 
     def _admit_note(self, agent: Agent, task_text: str, note: str) -> bool:

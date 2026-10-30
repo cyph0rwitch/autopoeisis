@@ -75,4 +75,5 @@ def run(code: str, asserts: list[str] | tuple[str, ...], timeout: float = 10.0) 
     if proc.returncode == 0:
         return RunResult(True)
     lines = [l for l in proc.stderr.strip().splitlines() if l.strip()]
-    return RunResult(False, "\n".join(lines[-3:])[:500])
+    # a process killed by a resource limit can exit without writing anything
+    return RunResult(False, "\n".join(lines[-3:])[:500] or f"exited with code {proc.returncode} and no output")
