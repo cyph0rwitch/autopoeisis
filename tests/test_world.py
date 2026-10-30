@@ -2,7 +2,7 @@ import random
 import unittest
 
 from autopoiesis.llm import MockBackend
-from autopoiesis.world import Config, Perturbation, World, corrupt
+from autopoiesis.world import ROLES as ROLES_ALL, Config, Perturbation, World, corrupt
 
 
 class FixedBackend:
@@ -170,6 +170,17 @@ class TestWorld(unittest.TestCase):
         self.assertEqual((choice["role"], choice["outcome"]), ("metabolizer", "birth_failed"))
         gate = next(e for e in events if e["event"] == "produce_tick")
         self.assertEqual(gate["decisions"], 1)
+
+    def test_forecast_rebuilds_a_role_before_its_cohort_ages_out(self):
+        w = World(MockBackend(0), Config(role_policy="forecast"), seed=0)
+        for role in ROLES_ALL * 3:
+            w._spawn(role, f"You are a {role} cell.", 0, None)
+        for c in w.cells:
+            if c.role == "membrane":
+                c.age = 25          # all three membranes die within 10 ticks
+        census = w.census()
+        self.assertIsNone(w._most_demanded(census))      # demand sees 3 healthy membranes
+        self.assertEqual(w._most_demanded(census, lead=10), "membrane")
 
     def test_garbage_genome_is_rejected(self):
         w = World(FixedBackend("no"), Config(decay_rate=0.0, perturbations_per_tick=0, start_pool=100), seed=0)

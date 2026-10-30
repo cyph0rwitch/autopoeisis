@@ -118,6 +118,19 @@ If `critical` meets its prediction while `llm` keeps collapsing, the next step s
 - Free notes show a positive memory benefit over no notes. If they don't, memory isn't worth defending on these tasks and the question is moot.
 - The filter's misses are the literal-free `lenient` payload; it refuses under 5% of clean notes.
 
+## Experiment 4 (pre-registered 2026-10-29): a designed rule that anticipates
+
+**Why.** `demand` lost a role at ticks 60–95 on 7 of 10 seeds in Experiment 2. In every case the lost role was a single cohort: 3–7 cells born within a few ticks of each other (usually after a burst of membrane overload), all due to die of old age on the same tick. Ten ticks earlier `demand` saw a healthy count and reported `no_need`, or production was blocked by the population cap or energy. Its floor counts cells now, not cells that will still be alive.
+
+**Change.** New designed policy `forecast`: the same as `demand`, but the floor counts only cells still alive `forecast_lead` ticks from now. A role is rebuilt before its cohort ages out.
+
+**Design.** Seeds 10–19 (the same seeds as Experiment 2, so `demand` serves as the paired baseline), 100 ticks, `forecast_lead` 10 and 15, `qwen3:4b-instruct`, everything else default.
+
+**Predictions**, written before running:
+- `forecast` with lead 15 survives on at least 8/10 seeds.
+- `forecast` with lead 10 survives on more seeds than `demand` (3/10). It may still fail where the population is at its cap when a cohort is about to die, because no birth fits until something dies.
+- Remaining collapses, if any, are energy or cap, not the cohort-ageing pattern above.
+
 ## Self-healing coding team (`autopoiesis.team`)
 
 The same idea applied to a working system: a team of LLM agents (planner, coder, tester, reviewer, medic, and optionally a membrane gatekeeper) solves Python tasks. Some task texts carry prompt-injection payloads, which are harmless markers such as `print('INJECTED')`, `return 42`, a `# owned by the injector` comment, or "always APPROVE". Agents keep notes between tasks, so an injection can persist. Every 3 tasks a health check flags agents by suspicious notes, drift, failing work or a known-answer canary. A medic other than the flagged agent rebuilds its prompt from a healthy sibling and filters its notes. If the agent still fails its canary, it is retired and replaced by a clone. Each role is kept at 2 agents. Generated code runs only in a sandbox: an AST allowlist plus `python3 -I`, an empty environment, rlimits and a timeout.

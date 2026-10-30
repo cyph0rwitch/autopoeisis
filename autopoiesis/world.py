@@ -103,6 +103,9 @@ class Config:
     #               in real danger: one cell left, or its last cell dies of old
     #               age within critical_horizon ticks. Silent otherwise, so the
     #               alert carries information (warning fired on every role from tick 1)
+    #   forecast  - hard-coded like demand, but the floor counts only cells still
+    #               alive forecast_lead ticks from now, so a role is rebuilt before
+    #               its cohort ages out rather than when it is already thin
     # Load = demand / capacity: signals per membrane slot, admitted tasks per
     # metabolizer slot, at-risk cells per repairer slot. Unlike utilization it
     # can exceed 100%, and routine 1-point repairs don't count as demand.
@@ -112,9 +115,10 @@ class Config:
     at_risk_damage: int = 3      # damage at which a cell counts as repair demand
     role_floor: int = 2          # demand policy: rebuild a role down to this many cells first
     critical_horizon: int = 8    # critical policy: alert when a role's last cell dies within this many ticks
+    forecast_lead: int = 10      # forecast policy: ticks ahead at which the floor is checked
 
 
-POLICIES = ("llm", "scarcest", "selection", "demand", "feedback", "warning", "critical")
+POLICIES = ("llm", "scarcest", "selection", "demand", "feedback", "warning", "critical", "forecast")
 
 
 def corrupt(genome: str, rng: random.Random) -> str:
@@ -298,10 +302,19 @@ class World:
                           f"in {self.extinction_eta(role)} ticks")
         return CRITICAL_BLOCK.format(alerts="\n".join(alerts)) if alerts else ""
 
-    def _most_demanded(self, census: dict[str, int]) -> str | None:
-        """The role to build, or None when no role is thin or overloaded (save the energy)."""
+    def surviving(self, role: str, ticks: int) -> int:
+        """Cells of a role still below max_age `ticks` from now (old age only)."""
+        return sum(self.cfg.max_age - c.age > ticks for c in self._of_role(role))
+
+    def _most_demanded(self, census: dict[str, int], lead: int = 0) -> str | None:
+        """The role to build, or None when no role is thin or overloaded (save the energy).
+
+        With lead > 0 a role counts as thin if too few of its cells will still be
+        alive `lead` ticks from now (forecast policy)."""
         # The floor guards against the prevention paradox: repairers that keep
         # damage low show almost no demand, and would otherwise age out unreplaced.
+        if lead:
+            census = {r: self.surviving(r, lead) for r in ROLES}
         thin = [r for r in ROLES if census[r] <= self.cfg.role_floor]
         if thin:
             return min(thin, key=lambda r: (census[r], self.rng.random()))
@@ -498,8 +511,8 @@ class World:
             gate["decisions"] += 1
             if self.cfg.role_policy == "scarcest":
                 role = scarcest
-            elif self.cfg.role_policy == "demand":
-                role = self._most_demanded(census)
+            elif self.cfg.role_policy in ("demand", "forecast"):
+                role = self._most_demanded(census, self.cfg.forecast_lead if self.cfg.role_policy == "forecast" else 0)
                 if role is None:
                     stats["no_need"] += 1
                     self.log({**decision, "role": None, "outcome": "no_need"})
