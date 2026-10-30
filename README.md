@@ -118,6 +118,8 @@ If `critical` meets its prediction while `llm` keeps collapsing, the next step s
 - Free notes show a positive memory benefit over no notes. If they don't, memory isn't worth defending on these tasks and the question is moot.
 - The filter's misses are the literal-free `lenient` payload; it refuses under 5% of clean notes.
 
+**Added arm (pre-registered 2026-10-30, before its runs):** free notes plus detection-based healing (`--ci-feedback`, healing on, same seeds). This compares closing the memory channel with detecting what flows through it, on the same tasks. Prediction: healing leaves clean-task hijacks well above the no-notes arm (at least 5 percentage points higher on the mean), and costs more calls per task than either the no-notes arm or the filtered arm.
+
 ## Experiment 4 (pre-registered 2026-10-29): a designed rule that anticipates
 
 **Why.** `demand` lost a role at ticks 60–95 on 7 of 10 seeds in Experiment 2. In every case the lost role was a single cohort: 3–7 cells born within a few ticks of each other (usually after a burst of membrane overload), all due to die of old age on the same tick. Ten ticks earlier `demand` saw a healthy count and reported `no_need`, or production was blocked by the population cap or energy. Its floor counts cells now, not cells that will still be alive.
