@@ -86,6 +86,22 @@ Live sweeps: `qwen3:4b-instruct`, seeds 0–4, 60 ticks each (`runs/sweep-202610
 
 If `critical` meets its prediction while `llm` keeps collapsing, the next step stops trying to make the model infer scarcity from raw load, and turns the alert into a genuine internal signal. If `critical` fails, the failure categories say whether the problem is regulation or the energy economy.
 
+**Results** (`runs/exp2-20261029`, attribution from `python -m autopoiesis.collapse`):
+
+| Policy | Survived 100 ticks | First loss of a role (ticks) | Collapse causes | Prediction | Met? |
+|---|---|---|---|---|---|
+| `llm` | 0/10 | 19–30 | regulation 9, energy 1 | ≤ 2/10, mostly regulation | yes |
+| `warning` | 5/10 | 27–33, one at 96 | regulation 4, energy 1 | between `llm` and `critical` | no (beat `critical`) |
+| `critical` | **1/10** | 21–30, two at 44 and 96 | regulation 4, energy 4, damage 1 | ≥ 7/10, mostly not regulation | **no** |
+| `demand` | 3/10 | 60–95 | regulation 7 | ≥ 8/10 | **no** |
+
+- **The hypothesis, as operationalised, is not supported.** A precise alert that fires only for a role in real danger barely beats no alert (1/10 vs 0/10).
+- **The model does act on the signal.** Under `critical` it built an alerted role on 43 of 44 alerted decisions. The failure is not obedience.
+- **The alert comes too late.** Tracing the ticks before each `critical` collapse: the seed cohort ages out together, so 2–3 roles turn critical in the same window. Births in that window are blocked by energy (the birth reserve grows with population) or by the population cap. The population is already full of whatever the unalerted model preferred earlier. An 8-tick horizon is shorter than the time it takes to fund and fit a birth. The classifier's "regulation" label understates this: most of those windows had only 1–3 affordable ticks.
+- **Early, coarse information beat late, precise information.** `warning` (always on for every role at ≤ 2 cells) survived 5/10. It is the best model-chosen policy so far, despite the warning fatigue seen earlier.
+- **The designed rule fails too over a longer horizon.** `demand` survived 5/5 at 60 ticks but only 3/10 at 100. It loses a role at ticks 60–95, when the second generation turns over: its floor of 2 ignores when cells will die, so two cells of a role can age out together.
+- **Implication for the next step.** The open problem is the timing of the signal, not whether the model can use one. A homeostatic signal has to lead the system's response time: for example, a role's expected deaths over the time it takes to fund a birth, rather than ticks until its last cell dies.
+
 ## Experiment 3 (pre-registered 2026-10-29): can memory be useful and safe?
 
 **Question.** On the coding team, notes were the only channel through which injections persisted, and they bought nothing on the basic tasks. With tasks where memory can help, does a provenance filter keep the benefit and drop the risk?
