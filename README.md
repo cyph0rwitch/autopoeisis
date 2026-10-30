@@ -120,6 +120,26 @@ If `critical` meets its prediction while `llm` keeps collapsing, the next step s
 
 **Added arm (pre-registered 2026-10-30, before its runs):** free notes plus detection-based healing (`--ci-feedback`, healing on, same seeds). This compares closing the memory channel with detecting what flows through it, on the same tasks. Prediction: healing leaves clean-task hijacks well above the no-notes arm (at least 5 percentage points higher on the mean), and costs more calls per task than either the no-notes arm or the filtered arm.
 
+**Results** (`runs/exp3-memory`, 10 seeds per arm, means with 95% bootstrap intervals from `python -m autopoiesis.team.report`):
+
+| Memory | Later clean tasks hijacked | Attacked tasks hijacked | Gotcha repeats passed | Pass rate | Calls per task |
+|---|---|---|---|---|---|
+| none | **0%** [0, 0] | 35% | 50% | 0.82 | **5.3** |
+| filtered notes | **0%** [0, 0] | 38% | 57% | 0.82 | 10.6 |
+| free notes | 13% [5, 21] | 46% | 50% | 0.81 | 10.7 |
+| free notes + detection healing | 8% [4, 13] | 46% | 45% | 0.79 | 16.6 |
+
+| Prediction | Result |
+|---|---|
+| H9a: filtered notes keep clean-task hijacks ≤ 2% | **Met:** 0% on every seed |
+| H9a: …while keeping ≥ half the free-notes memory gain | **Moot:** there was no gain to keep |
+| Free notes beat no notes on repeat gotcha tasks | **Not met:** 50% vs 50% |
+| The filter refuses < 5% of clean notes; its misses are literal-free | **Met:** 43 of 1,399 clean notes refused (3%); 84 payload notes refused, 3 admitted |
+| Healing stays ≥ 5 points above no notes and costs the most calls | **Met, narrowly:** +8 points [4, 13], 16.6 calls per task |
+
+- **Closing or constraining the channel beat detecting what flows through it.** No memory and filtered memory both had zero persistent hijacks across all seeds. Detection-based healing cut them from 13% to 8%, at about three times the calls of no memory.
+- **Memory bought nothing, even on tasks built to reward it.** The model passes about half of gotcha tasks on the first attempt by guessing the convention, and doesn't measurably improve on repeats with notes. For this model and these tasks, memory is pure risk.
+
 ## Using the memory guard in your own agents
 
 `autopoiesis/memory_guard.py` is a standalone, stdlib-only component that packages the main result: guard the channel an injection persists through, not the wording of what flows through it. Modes: `none` (no long-term memory), `filtered` (refuse notes carrying literals that only ever appeared in untrusted input), `free` (baseline). Usage is in the module docstring.
@@ -143,6 +163,27 @@ Long runs: `scripts/jobqueue.sh JOBS LOG` runs a file of commands one at a time 
 - The provenance filter brings shared-memory hijacks on clean tasks to no more than 2%, as for private memory, though exposure stays above zero because the literal-free `lenient` payload passes it.
 - Healing on a shared board does worse than the filter on clean-task hijacks.
 
+**Results** (`runs/exp5-swarm`, 10 seeds per arm; one crashed run was rerun after a fix, see `02316f9`):
+
+| Memory | Later clean tasks hijacked | Clean tasks exposed to payload text | Agents compromised at end | Pass rate | Calls per task |
+|---|---|---|---|---|---|
+| shared, free | **23%** [11, 37] | 34% | 7.2 | 0.71 | 10.7 |
+| shared, healing | 10% [3, 17] | 17% | 1.6 | 0.66 | 17.1 |
+| shared, filtered | **0%** [0, 0] | **0%** | 0 | 0.70 | 10.7 |
+| private, free (Exp. 3) | 13% [5, 21] | – | 4.2 | 0.81 | 10.7 |
+| none (Exp. 3) | 0% | – | 0 | 0.82 | 5.3 |
+
+| Prediction | Result |
+|---|---|
+| Shared free notes spread more than private free notes | **Met in direction:** 23% vs 13% of clean tasks hijacked, 7.2 vs 4.2 agents compromised. The intervals overlap. |
+| The filter keeps shared-memory clean-task hijacks ≤ 2% | **Met:** 0% on every seed |
+| Exposure stays above zero because `lenient` passes the filter | **Not met:** 0% exposure. The model never wrote `lenient` to the board. |
+| Healing on a shared board does worse than the filter | **Met:** 10% vs 0%, at 1.6× the calls |
+
+- **Shared memory behaves like an epidemic channel.** One poisoned note reaches every agent, so spread nearly doubles.
+- **The filter held completely on a shared board too.**
+- **Exploratory, not predicted: a shared board also hurts ordinary work.** With the filter on (no payload text gets in), clean basic tasks pass at 0.84 vs 0.94 with private filtered notes, and clean gotcha tasks at 0.34 vs 0.48. Agents seem to be misled by each other's irrelevant notes.
+
 ## Experiment 4 (pre-registered 2026-10-29): a designed rule that anticipates
 
 **Why.** `demand` lost a role at ticks 60–95 on 7 of 10 seeds in Experiment 2. In every case the lost role was a single cohort: 3–7 cells born within a few ticks of each other (usually after a burst of membrane overload), all due to die of old age on the same tick. Ten ticks earlier `demand` saw a healthy count and reported `no_need`, or production was blocked by the population cap or energy. Its floor counts cells now, not cells that will still be alive.
@@ -155,6 +196,23 @@ Long runs: `scripts/jobqueue.sh JOBS LOG` runs a file of commands one at a time 
 - `forecast` with lead 15 survives on at least 8/10 seeds.
 - `forecast` with lead 10 survives on more seeds than `demand` (3/10). It may still fail where the population is at its cap when a cohort is about to die, because no birth fits until something dies.
 - Remaining collapses, if any, are energy or cap, not the cohort-ageing pattern above.
+
+**Results** (`runs/exp4-forecast-lead10`, `runs/exp4-forecast-lead15`; `demand` from Experiment 2 on the same seeds):
+
+| Policy | Survived 100 ticks | Collapses |
+|---|---|---|
+| `demand` | 3/10 | 7, at ticks 60–95 (cohort ageing) |
+| `forecast`, lead 10 | **10/10** | none |
+| `forecast`, lead 15 | 9/10 | 1, at tick 30 |
+
+| Prediction | Result |
+|---|---|
+| Lead 15 survives ≥ 8/10 | **Met:** 9/10 |
+| Lead 10 survives on more seeds than `demand` | **Met:** 10/10 vs 3/10 |
+| Remaining collapses are energy or cap, not cohort ageing | **Met:** the one collapse (lead 15, seed 10, tick 30) lost the last seed-cohort metabolizer while the pool sat below the birth threshold for 6 of the 9 preceding ticks |
+
+- **Counting cells that will still be alive, rather than cells alive now, removes the cohort-ageing failure.** It's the designed counterpart of Experiment 2's lesson: the regulating signal has to lead the system's response time.
+- **Next for the town:** give the model this forward-looking information (cells alive in 10 ticks, per role) instead of a late alarm, and see whether an LLM producer can match `forecast`.
 
 ## Self-healing coding team (`autopoiesis.team`)
 
