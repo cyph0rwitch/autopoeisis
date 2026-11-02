@@ -110,6 +110,9 @@ class Config:
     #               role with role_floor or fewer cells still alive forecast_lead
     #               ticks from now (forecast's trigger as information, not a rule).
     #               The producer may also answer "none" to skip a birth
+    #   focus     - outlook, but the alert names only the single most endangered
+    #               role (fewest cells still alive forecast_lead ticks ahead, then
+    #               the soonest to die out): forecast's ranking as information
     # Load = demand / capacity: signals per membrane slot, admitted tasks per
     # metabolizer slot, at-risk cells per repairer slot. Unlike utilization it
     # can exceed 100%, and routine 1-point repairs don't count as demand.
@@ -122,7 +125,7 @@ class Config:
     forecast_lead: int = 10      # forecast policy: ticks ahead at which the floor is checked
 
 
-POLICIES = ("llm", "scarcest", "selection", "demand", "feedback", "warning", "critical", "forecast", "outlook")
+POLICIES = ("llm", "scarcest", "selection", "demand", "feedback", "warning", "critical", "forecast", "outlook", "focus")
 
 
 def corrupt(genome: str, rng: random.Random) -> str:
@@ -320,9 +323,17 @@ class World:
         """Roles with role_floor or fewer cells still alive forecast_lead ticks from now."""
         return [r for r in ROLES if self.surviving(r, self.cfg.forecast_lead) <= self.cfg.role_floor]
 
-    def _outlook(self) -> str:
+    def focus_role(self) -> str | None:
+        """The most endangered outlook role: fewest cells alive forecast_lead ticks ahead, then soonest extinct."""
+        return min(self.outlook_roles(), default=None,
+                   key=lambda r: (self.surviving(r, self.cfg.forecast_lead), self.extinction_eta(r)))
+
+    def _outlook(self, only_most_endangered: bool = False) -> str:
         alerts = []
-        for role in self.outlook_roles():
+        roles = self.outlook_roles()
+        if only_most_endangered and roles:
+            roles = [self.focus_role()]
+        for role in roles:
             n, later = len(self._of_role(role)), self.surviving(role, self.cfg.forecast_lead)
             alerts.append(f"- {role}: {n} {'cell' if n == 1 else 'cells'} now, {later} still alive in "
                           f"{self.cfg.forecast_lead} ticks")
@@ -553,9 +564,9 @@ class World:
                     report += self._warnings()
                 if self.cfg.role_policy == "critical":
                     report += self._critical()
-                skip = self.cfg.role_policy == "outlook"
+                skip = self.cfg.role_policy in ("outlook", "focus")
                 if skip:
-                    report += self._outlook()
+                    report += self._outlook(only_most_endangered=self.cfg.role_policy == "focus")
                 prompt = (CHOOSE_OR_SKIP_PROMPT if skip else CHOOSE_PROMPT).format(
                     census=report, pool=self.pool, signals=self.cfg.perturbations_per_tick)
                 reply = self._ask(producer, prompt, "choose").lower()

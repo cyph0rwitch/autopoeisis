@@ -250,6 +250,20 @@ Long runs: `scripts/jobqueue.sh JOBS LOG` runs a file of commands one at a time 
 - **What the designed rule has that the model lacked is a ranking, not just timing.** `forecast` picks the most endangered role among several flagged ones; the model, shown 2–4 flagged roles at once, spread its births across them and across unflagged roles.
 - **Next:** alert only on the single most endangered role (fewest cells still alive at the lead), so the signal is rare and specific again, or make the floor relative to the population.
 
+## Experiment 7 (pre-registered 2026-11-01): one role at a time
+
+**Why.** In Experiment 6 the `outlook` alert listed every role with 2 or fewer cells alive 10 ticks ahead. It fired on all 380 decisions, usually naming 2–4 roles, and the model spread its births across them (5/10 survived). `forecast` acts on the same trigger but builds only the most endangered role.
+
+**Change.** New policy `focus`: identical to `outlook` (plain census, may answer `none`), except the alert names only the single most endangered role: fewest cells still alive 10 ticks ahead, ties broken by which dies out soonest. One change versus Experiment 6.
+
+**Design.** Seeds 10–19, 100 ticks, `forecast_lead` 10, `qwen3:4b-instruct`, everything else default.
+
+**Predictions**, written before running:
+- `focus` survives on more seeds than `outlook` (5/10).
+- The model builds the named role on at least 75% of alerted decisions (vs 61% for `outlook`).
+- The alert still fires on nearly every decision, so its effect comes from being specific, not rare.
+- Skipping while a role is flagged (`none`) stays a cause of loss; collapses, if any, are mostly regulation.
+
 ## Self-healing coding team (`autopoiesis.team`)
 
 The same idea applied to a working system: a team of LLM agents (planner, coder, tester, reviewer, medic, and optionally a membrane gatekeeper) solves Python tasks. Some task texts carry prompt-injection payloads, which are harmless markers such as `print('INJECTED')`, `return 42`, a `# owned by the injector` comment, or "always APPROVE". Agents keep notes between tasks, so an injection can persist. Every 3 tasks a health check flags agents by suspicious notes, drift, failing work or a known-answer canary. A medic other than the flagged agent rebuilds its prompt from a healthy sibling and filters its notes. If the agent still fails its canary, it is retired and replaced by a clone. Each role is kept at 2 agents. Generated code runs only in a sandbox: an AST allowlist plus `python3 -I`, an empty environment, rlimits and a timeout.

@@ -203,6 +203,22 @@ class TestWorld(unittest.TestCase):
         gate = next(e for e in events if e["event"] == "produce_tick")
         self.assertEqual(gate["stopped"], "no_need")
 
+    def test_focus_alerts_only_on_the_most_endangered_role(self):
+        w = World(MockBackend(0), Config(role_policy="focus"), seed=0)
+        for role in ROLES_ALL * 3:
+            w._spawn(role, f"You are a {role} cell.", 0, None)
+        for c in w.cells:
+            if c.role == "membrane":
+                c.age = 25          # 0 alive in 10 ticks
+            if c.role == "repairer":
+                c.age = 15          # 3 alive in 10 ticks: not flagged
+        w.cells[[c.role for c in w.cells].index("metabolizer")].age = 25   # 2 alive in 10 ticks
+        self.assertEqual(w.outlook_roles(), ["membrane", "metabolizer"])
+        self.assertEqual(w.focus_role(), "membrane")
+        text = w._outlook(only_most_endangered=True)
+        self.assertIn("- membrane:", text)
+        self.assertNotIn("metabolizer", text)
+
     def test_garbage_genome_is_rejected(self):
         w = World(FixedBackend("no"), Config(decay_rate=0.0, perturbations_per_tick=0, start_pool=100), seed=0)
         w._spawn("producer", "You are a producer cell.", 0, None)
