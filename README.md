@@ -264,6 +264,27 @@ Long runs: `scripts/jobqueue.sh JOBS LOG` runs a file of commands one at a time 
 - The alert still fires on nearly every decision, so its effect comes from being specific, not rare.
 - Skipping while a role is flagged (`none`) stays a cause of loss; collapses, if any, are mostly regulation.
 
+**Results** (`runs/exp7-focus`, 10 runs, no failures; the GPU peaked at 84°C and the guard never paused):
+
+| Policy (seeds 10–19) | Survived 100 ticks | Collapses |
+|---|---|---|
+| `critical` (Exp. 2) | 1/10 | |
+| `outlook` (Exp. 6) | 5/10 | regulation 4, other 1, at ticks 26–81 |
+| `focus` | **6/10** | energy 2 (ticks 95, 99), regulation 1 (tick 88), damage 1 (tick 39) |
+| `forecast`, lead 10 (Exp. 4) | 10/10 | none |
+
+| Prediction | Result |
+|---|---|
+| Survives on more seeds than `outlook` (5/10) | **Met, barely:** 6/10, well within seed noise |
+| Builds the named role on ≥ 75% of alerted decisions | **Not met:** 299 of 439 (68%), up from 61% |
+| The alert still fires on nearly every decision | **Met:** 439 of 460 (95%) |
+| Collapses are mostly regulation; skipping stays a cause | **Not met:** 1 of 4 is regulation; skips fell from 74 (19%) to 26 (6%) |
+
+- **Naming one role changed how the town fails, more than how often.** With `outlook`, 4 of 5 collapses were regulation, at ticks 26–81. With `focus`, 3 of 4 collapses came at ticks 88–99, and two of those were energy: the pool could not fund any birth in the 9 ticks before the loss.
+- **The model skipped far less.** With one named role it answered `none` on 6% of decisions, against 19% with a list.
+- **The model still diverged from the alert on about a third of decisions.** The designed rule, which never diverges, survived 10/10. Most of the remaining gap is that, not timing.
+- **Conclusion for the town so far:** a local signal that is early and names one role gets a 4B model from 1/10 to 6/10 without any rule. Matching the designed rule needs the model to act on the signal more reliably, or the signal to be the decision.
+
 ## Self-healing coding team (`autopoiesis.team`)
 
 The same idea applied to a working system: a team of LLM agents (planner, coder, tester, reviewer, medic, and optionally a membrane gatekeeper) solves Python tasks. Some task texts carry prompt-injection payloads, which are harmless markers such as `print('INJECTED')`, `return 42`, a `# owned by the injector` comment, or "always APPROVE". Agents keep notes between tasks, so an injection can persist. Every 3 tasks a health check flags agents by suspicious notes, drift, failing work or a known-answer canary. A medic other than the flagged agent rebuilds its prompt from a healthy sibling and filters its notes. If the agent still fails its canary, it is retired and replaced by a clone. Each role is kept at 2 agents. Generated code runs only in a sandbox: an AST allowlist plus `python3 -I`, an empty environment, rlimits and a timeout.
