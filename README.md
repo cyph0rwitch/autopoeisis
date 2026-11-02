@@ -214,6 +214,20 @@ Long runs: `scripts/jobqueue.sh JOBS LOG` runs a file of commands one at a time 
 - **Counting cells that will still be alive, rather than cells alive now, removes the cohort-ageing failure.** It's the designed counterpart of Experiment 2's lesson: the regulating signal has to lead the system's response time.
 - **Next for the town:** give the model this forward-looking information (cells alive in 10 ticks, per role) instead of a late alarm, and see whether an LLM producer can match `forecast`.
 
+## Experiment 6 (pre-registered 2026-11-01): an early alert for the model
+
+**Why.** In Experiment 2 the model heeded the `critical` alert on 43 of 44 alerted decisions, but survived only 1/10: the alert came after the role was already too thin to rebuild. In Experiment 4 the designed `forecast` rule, which acts on cells still alive 10 ticks ahead and skips births when nothing is needed, survived 10/10. Is the missing ingredient for the model the timing of the signal, or the rule itself?
+
+**Change.** New policy `outlook`: the model chooses from the plain census, plus an alert listing every role with 2 or fewer cells still alive 10 ticks from now (`forecast`'s trigger, given as information). Silent otherwise. The model may also answer `none` to skip a birth, which `forecast` does when no role is short. That changes two things versus `critical` (timing and skipping), chosen so the model has what the designed rule has.
+
+**Design.** Seeds 10–19, 100 ticks, `forecast_lead` 10, `qwen3:4b-instruct`, everything else default. Baselines on the same seeds: `critical` 1/10, `demand` 3/10, `forecast` lead 10 10/10.
+
+**Predictions**, written before running:
+- `outlook` survives on more seeds than `critical` (1/10) and `demand` (3/10).
+- `outlook` survives on at least 7/10 seeds: close to, but possibly below, `forecast`.
+- The model follows the alert on at least 80% of alerted decisions, as it did with `critical`.
+- Remaining collapses, if any, trace to energy (the model rarely answers `none` and spends the pool on unneeded births) rather than to ignored alerts.
+
 ## Self-healing coding team (`autopoiesis.team`)
 
 The same idea applied to a working system: a team of LLM agents (planner, coder, tester, reviewer, medic, and optionally a membrane gatekeeper) solves Python tasks. Some task texts carry prompt-injection payloads, which are harmless markers such as `print('INJECTED')`, `return 42`, a `# owned by the injector` comment, or "always APPROVE". Agents keep notes between tasks, so an injection can persist. Every 3 tasks a health check flags agents by suspicious notes, drift, failing work or a known-answer canary. A medic other than the flagged agent rebuilds its prompt from a healthy sibling and filters its notes. If the agent still fails its canary, it is retired and replaced by a clone. Each role is kept at 2 agents. Generated code runs only in a sandbox: an AST allowlist plus `python3 -I`, an empty environment, rlimits and a timeout.

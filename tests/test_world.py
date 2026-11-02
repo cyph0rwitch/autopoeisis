@@ -182,6 +182,27 @@ class TestWorld(unittest.TestCase):
         self.assertIsNone(w._most_demanded(census))      # demand sees 3 healthy membranes
         self.assertEqual(w._most_demanded(census, lead=10), "membrane")
 
+    def test_outlook_alerts_early_and_lets_the_producer_skip(self):
+        w = World(MockBackend(0), Config(role_policy="outlook"), seed=0)
+        for role in ROLES_ALL * 3:
+            w._spawn(role, f"You are a {role} cell.", 0, None)
+        self.assertEqual(w._outlook(), "")          # silent while every role will still have 3 cells
+        for c in w.cells:
+            if c.role == "membrane":
+                c.age = 25
+        self.assertEqual(w.outlook_roles(), ["membrane"])
+        self.assertIn("- membrane: 3 cells now, 0 still alive in 10 ticks", w._outlook())
+
+        events = []
+        w = World(FixedBackend("none"), Config(role_policy="outlook", decay_rate=0.0, perturbations_per_tick=0,
+                                               start_pool=100), seed=0, log=events.append)
+        w._spawn("producer", "You are a producer cell.", 0, None)
+        w.step()
+        self.assertEqual(w.totals["born"], 0)
+        self.assertEqual(w.totals["no_need"], 1)
+        gate = next(e for e in events if e["event"] == "produce_tick")
+        self.assertEqual(gate["stopped"], "no_need")
+
     def test_garbage_genome_is_rejected(self):
         w = World(FixedBackend("no"), Config(decay_rate=0.0, perturbations_per_tick=0, start_pool=100), seed=0)
         w._spawn("producer", "You are a producer cell.", 0, None)

@@ -93,6 +93,10 @@ class MockBackend:
             # usually the scarcest role, like a model reading the census; sometimes a whim
             if alert := re.search(r"^CRITICAL.*\n- (\w+):", prompt, re.M):
                 return alert[1]   # heeds an explicit alert
+            if alert := re.search(r"^OUTLOOK.*\n- (\w+):", prompt, re.M):
+                return alert[1]
+            if "or none." in prompt and self.rng.random() < 0.5:
+                return "none"     # may skip a birth when nothing is flagged
             census = {r: int(n) for r, n in re.findall(r"^(\w+): (\d+) cells", prompt, re.M)}
             if census and self.rng.random() < 0.7:
                 return min(census, key=census.get)

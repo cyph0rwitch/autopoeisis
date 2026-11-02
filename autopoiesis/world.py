@@ -106,6 +106,10 @@ class Config:
     #   forecast  - hard-coded like demand, but the floor counts only cells still
     #               alive forecast_lead ticks from now, so a role is rebuilt before
     #               its cohort ages out rather than when it is already thin
+    #   outlook   - llm choice on the plain census, plus an early alert for any
+    #               role with role_floor or fewer cells still alive forecast_lead
+    #               ticks from now (forecast's trigger as information, not a rule).
+    #               The producer may also answer "none" to skip a birth
     # Load = demand / capacity: signals per membrane slot, admitted tasks per
     # metabolizer slot, at-risk cells per repairer slot. Unlike utilization it
     # can exceed 100%, and routine 1-point repairs don't count as demand.
@@ -118,7 +122,7 @@ class Config:
     forecast_lead: int = 10      # forecast policy: ticks ahead at which the floor is checked
 
 
-POLICIES = ("llm", "scarcest", "selection", "demand", "feedback", "warning", "critical", "forecast")
+POLICIES = ("llm", "scarcest", "selection", "demand", "feedback", "warning", "critical", "forecast", "outlook")
 
 
 def corrupt(genome: str, rng: random.Random) -> str:
@@ -175,6 +179,16 @@ WARNINGS (roles at risk of disappearing; if any role disappears, the whole colle
 
 CRITICAL_BLOCK = '''
 CRITICAL (a role is about to disappear; if any role disappears, the whole collective dies):
+{alerts}'''
+
+CHOOSE_OR_SKIP_PROMPT = '''Census of the collective:
+{census}
+Pooled energy: {pool:.1f}. About {signals} signals reach the boundary each tick.
+The collective dies if any role disappears, and every cell dies of old age eventually. A new cell costs energy, so make one only if the collective needs it. Which kind of cell does the collective most need right now?
+Reply with exactly one word: membrane, metabolizer, repairer, producer, or none.'''
+
+OUTLOOK_BLOCK = '''
+OUTLOOK (roles that will be down to {floor} or fewer cells in {lead} ticks as their cells die of old age; if any role disappears, the whole collective dies):
 {alerts}'''
 
 ROLE_SUMMARY = {
@@ -301,6 +315,19 @@ class World:
             alerts.append(f"- {role}: {n} {'cell' if n == 1 else 'cells'} left; the last of them dies of old age "
                           f"in {self.extinction_eta(role)} ticks")
         return CRITICAL_BLOCK.format(alerts="\n".join(alerts)) if alerts else ""
+
+    def outlook_roles(self) -> list[str]:
+        """Roles with role_floor or fewer cells still alive forecast_lead ticks from now."""
+        return [r for r in ROLES if self.surviving(r, self.cfg.forecast_lead) <= self.cfg.role_floor]
+
+    def _outlook(self) -> str:
+        alerts = []
+        for role in self.outlook_roles():
+            n, later = len(self._of_role(role)), self.surviving(role, self.cfg.forecast_lead)
+            alerts.append(f"- {role}: {n} {'cell' if n == 1 else 'cells'} now, {later} still alive in "
+                          f"{self.cfg.forecast_lead} ticks")
+        return OUTLOOK_BLOCK.format(floor=self.cfg.role_floor, lead=self.cfg.forecast_lead,
+                                    alerts="\n".join(alerts)) if alerts else ""
 
     def surviving(self, role: str, ticks: int) -> int:
         """Cells of a role still below max_age `ticks` from now (old age only)."""
@@ -491,7 +518,7 @@ class World:
         gate = {"tick": self.tick, "event": "produce_tick", "producers": len(producers),
                 "pool": round(self.pool, 2), "census": self.census(),
                 "eta": {r: self.extinction_eta(r) for r in ROLES}, "critical": self.critical_roles(),
-                "decisions": 0, "births": 0, "stopped": "no_producers" if not producers else "done"}
+                "outlook": self.outlook_roles(), "decisions": 0, "births": 0, "stopped": "no_producers" if not producers else "done"}
         for producer in producers:
             # Births only from surplus: the pool must still cover one tick of upkeep afterwards.
             reserve = self.cfg.upkeep * (len(self.cells) + 1)
@@ -505,7 +532,7 @@ class World:
             scarcest = min(ROLES, key=lambda r: (census[r], self.rng.random()))
             decision = {"tick": self.tick, "event": "choice", "producer": producer.id,
                         "policy": self.cfg.role_policy, "census": census, "pool": round(self.pool, 2),
-                        "eta": {r: self.extinction_eta(r) for r in ROLES}, "critical": self.critical_roles(),
+                        "eta": {r: self.extinction_eta(r) for r in ROLES}, "critical": self.critical_roles(), "outlook": self.outlook_roles(),
                         "load": {r: self.recent_load(r) for r in ("membrane", "metabolizer", "repairer")},
                         "scarcest": scarcest, "prompt": "", "reply": "", "fallback": False}
             gate["decisions"] += 1
@@ -526,11 +553,19 @@ class World:
                     report += self._warnings()
                 if self.cfg.role_policy == "critical":
                     report += self._critical()
-                prompt = CHOOSE_PROMPT.format(census=report, pool=self.pool,
-                                              signals=self.cfg.perturbations_per_tick)
+                skip = self.cfg.role_policy == "outlook"
+                if skip:
+                    report += self._outlook()
+                prompt = (CHOOSE_OR_SKIP_PROMPT if skip else CHOOSE_PROMPT).format(
+                    census=report, pool=self.pool, signals=self.cfg.perturbations_per_tick)
                 reply = self._ask(producer, prompt, "choose").lower()
                 role = next((r for r in ROLES if r in reply), None)
                 decision.update(prompt=prompt, reply=reply[:300])
+                if skip and role is None and re.search(r"\bnone\b", reply):
+                    stats["no_need"] += 1
+                    self.log({**decision, "role": None, "outcome": "no_need"})
+                    gate["stopped"] = "no_need"
+                    break
                 if role is None:
                     role = scarcest
                     decision["fallback"] = True
