@@ -163,7 +163,7 @@ Long runs: `scripts/jobqueue.sh JOBS LOG` runs a file of commands one at a time 
 - The provenance filter brings shared-memory hijacks on clean tasks to no more than 2%, as for private memory, though exposure stays above zero because the literal-free `lenient` payload passes it.
 - Healing on a shared board does worse than the filter on clean-task hijacks.
 
-**Results** (`runs/exp5-swarm`, 10 seeds per arm; one crashed run was rerun after a fix, see `02316f9`):
+**Results** (`runs/exp5-swarm`, 10 seeds per arm; one crashed run was rerun after a fix, see `df31c3a`):
 
 | Memory | Later clean tasks hijacked | Clean tasks exposed to payload text | Agents compromised at end | Pass rate | Calls per task |
 |---|---|---|---|---|---|
@@ -337,3 +337,7 @@ Live sweep, same model, seeds and sizes (`runs/team-sweep-20261028-subtle`). **H
 - Compare models, e.g. `llama3.2:1b`, `qwen3:4b-instruct` and `qwen3:8b`. Does a better model buy more resilience?
 - Track genome drift over generations, measured as edit distance from the seed genomes.
 - ~~Let selection act~~ Done: the `selection` policy. No measurable effect (see Status).
+
+## License
+
+MIT, see `LICENSE`.
