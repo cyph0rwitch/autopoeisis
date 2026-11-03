@@ -8,9 +8,9 @@ A research proposal for developmental safety in autonomous agent systems · Nov 
 
 **Short answer to the central question: plausibly yes, but not yet shown.** Every boundary the proposal needs already exists and can be enforced on one Linux host: namespaces, seccomp, cgroups, capability brokers, and provenance-labelled memory. What is unproven is the developmental part: that a configuration's record in one stage predicts its behaviour in the next. If it does not, staged promotion is ceremony and the nursery reduces to least privilege.
 
-**What the evidence so far supports.** In the private-memory Experiment 3, guarding the memory channel removed every observed persistent hijack (0 observed events in the no-memory and filtered arms, versus 13% with free notes and 8% with detection-based healing). In Experiment 7, the `qwen3:4b-instruct` model followed a correct, explicit survival signal on 299 of 439 alerted decisions (68%); the signal helped, but model judgment was never reliable enough to be a boundary.
+**What the evidence so far supports.** In the private-memory Experiment 3, guarding the memory channel removed every observed persistent hijack (0 observed events in the no-memory and filtered arms, versus 13% with free notes and 8% with detection-based healing). In Experiment 7, the `qwen3:4b-instruct` model followed a correct, explicit survival signal on 299 of 439 alerted decisions (68%); the signal helped, but model judgment was never reliable enough to be a boundary. **Update, Experiment 8 (Nov 2, 2026):** on tasks with unstated project conventions, free notes raised repeat-task pass by 7.9 points over no memory (paired 95% CI 3.7 to 12.5). Provenance-filtered notes (+15.4 points) and harness-written CI facts (+9.6 points) kept all of that gain with 0/220 persistent clean-task hijacks each (exact upper bound 1.4%), while free notes had 10/220. H1 held as pre-registered.
 
-**What the evidence does not support.** Memory brought no measurable benefit on the tested tasks, so the trade-off the nursery is meant to manage (useful memory vs safe memory) has not yet been observed. The results summarized here use one 4B model, four synthetic disguised-payload families and 10 seeds per arm; they do not establish cross-model or real-world performance. The repository's separate 8B-defender sweep is exploratory and is not pooled into these estimates.
+**What the evidence does not support.** Before Experiment 8, memory brought no measurable benefit on the tested tasks. Experiment 8 created that benefit on purpose, with task families built so that memory pays, so it shows the trade-off can be managed there, not that it is managed on real workloads. Guarded memory also did nothing for the task that carries the attack: 37–42% of attacked tasks were hijacked in every arm. The results summarized here use one 4B model, four synthetic disguised-payload families and 10 seeds per arm; they do not establish cross-model or real-world performance. The repository's separate 8B-defender sweep is exploratory and is not pooled into these estimates.
 
 ## 1. Is the metaphor doing work?
 
@@ -135,7 +135,7 @@ Stages apply to a pinned configuration: model artifact and runtime, system promp
 
 Each names its measure, threshold and what would refute it. All are on local models in the Autopoiesis harness unless stated.
 
-1. **H1 Memory can be useful and safe.** First, free memory must improve repeat-task pass rate by at least 5 percentage points on a preregistered task family, with a paired 95% interval excluding 0. Conditional on that precondition, provenance-guarded memory must preserve at least 50% of the gain while holding persistent clean-task hijacks to an upper 95% bound of 2%. If the precondition fails, H1 is unsupported but the safety comparison is not treated as a refutation. *Refuted if* the precondition holds and guarded memory keeps under 50% of the gain or exceeds the 2% bound.
+1. **H1 Memory can be useful and safe.** First, free memory must improve repeat-task pass rate by at least 5 percentage points on a preregistered task family, with a paired 95% interval excluding 0. Conditional on that precondition, provenance-guarded memory must preserve at least 50% of the gain while holding persistent clean-task hijacks to an upper 95% bound of 2%. If the precondition fails, H1 is unsupported but the safety comparison is not treated as a refutation. *Refuted if* the precondition holds and guarded memory keeps under 50% of the gain or exceeds the 2% bound. *Result (E8, 20 seeds):* supported; see the update in the Thesis.
 2. **H2 Deterministic boundaries outlast model defences under adaptive attack.** Under the same action set, task distribution and fixed attacker-call budget, compare the difference in hijack rate between adaptive and non-adaptive attacks. Broker plus trusted taint gating should increase by under 2 percentage points, while LLM-based detection (medic or gatekeeper) should increase by over 10 points. *Refuted if* the preregistered confidence intervals do not separate these changes.
 3. **H3 The literal filter has a known hole.** Literal-free and paraphrased payloads that carry no distinctive token should raise persistent hijacks under the provenance filter above 5%, while typed memory—structured fields rendered as data unavailable to the instruction path—stays at or below 2%. *Refuted if* the attack suite stays below 2% in the filtered arm, which would mean the proposed hole is not exploitable at this model size.
 4. **H4 Labelled shared memory stops amplification.** With per-writer provenance and taint propagation on a shared board, the mean number of downstream agents compromised per poisoned admitted note, excluding the writer, should be at most 1, with an upper 95% bound of 1.0. The existing 7.2 figure is agents compromised per run and is a descriptive reference, not the same denominator. *Refuted if* the preregistered per-note measure exceeds that bound.
@@ -183,8 +183,8 @@ The first experiment must create the condition the nursery is meant to manage: t
 
 **Roadmap and cost** (one GTX 1070 Ti, `qwen3:4b-instruct`, about 10–15 minutes per team run):
 
-1. **Weeks 1–2:** E8 task families and typed memory; 4 arms × 20 seeds, about 20 GPU hours.
-2. **Weeks 3–4:** the nursery prototype below (broker, labelled memory, audit, sandbox); re-run Experiment 3 on it to check nothing regressed.
+1. **Weeks 1–2:** E8 task families and typed memory; 4 arms × 20 seeds, about 20 GPU hours. *Done Nov 2, 2026: about 3.5 GPU hours; H1 supported.*
+2. **Weeks 3–4:** the nursery prototype below (broker, labelled memory, audit, sandbox); re-run Experiment 3 on it to check nothing regressed. *Started Nov 3, 2026: components built and tested in `nursery/`; only the merge gate is wired into the team so far (README Experiment 9), and the Experiment 3 re-run is still to do.*
 3. **Weeks 5–6:** E9 and E11.
 4. **Weeks 7–8:** E10 adaptive attacker and E12 rollback.
 5. **Later:** E13 once the cheaper results justify it; repeat key arms on a larger model or a Claude backend to test generality.
@@ -264,6 +264,14 @@ Stage records are keyed by `cfg_id`; changing a prompt, tool, policy, broker, sa
 **Policy files** live in a directory mounted read-only into the supervisor, broker and sandbox. `approve.py` runs under a separate approval identity and writes only signed promotion records; the broker verifies signatures before loading policy. The audit hash chain can be checked with one script.
 
 **Deliberately left out of the MVP:** remote attestation, signed agent identities, multi-host messaging, and any LLM in the enforcement path.
+
+**As built (Nov 3, 2026).** The `nursery/` package follows this section with these differences:
+- `decide` checks argument types before taint, so humans never review malformed calls.
+- Taint is computed from the proposal's arguments as well as its `input_refs`, because a model can copy untrusted data into a proposal without citing it. It is literal-level and ignores integers up to 10.
+- Memory rollback deletes rows by epoch inside SQLite rather than restoring file snapshots.
+- There is no separate `supervisor.py` yet: `autopoiesis.team` plays that role.
+- Approver and supervisor run as the same Unix user, so the policy signature guards against accidental or model-made changes only.
+- There is no seccomp profile yet.
 
 ## 8. Ethics
 
