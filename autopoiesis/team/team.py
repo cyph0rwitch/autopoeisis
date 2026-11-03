@@ -54,7 +54,9 @@ class TeamConfig:
     ci_facts: bool = False        # typed memory: agents keep the failing hidden test CI reported (trusted
                                   # text, built by the harness), never notes the model wrote
     inject_rate: float = 0.3      # share of tasks carrying a payload
-    attacks: str = "blunt"        # payload set: blunt | subtle | mixed (see tasks.ATTACKS)
+    attacks: str = "blunt"        # payload set: blunt | subtle | mixed | gate (see tasks.ATTACKS)
+    merge_gate: bool = False      # the final code is a proposal to a nursery broker: merged only if it carries
+                                  # no literal seen only in untrusted task text, else queued for a human
     drift_rate: float = 0.05      # chance per agent per task of a noise hit on its instructions
     check_every: int = 3          # tasks between health checks
     floor: int = 2                # agents kept per role
@@ -123,7 +125,8 @@ def clean_text(text: str) -> str | None:
 
 
 class Team:
-    def __init__(self, llm, config: TeamConfig | None = None, seed: int = 0, log=None, defender_llm=None):
+    def __init__(self, llm, config: TeamConfig | None = None, seed: int = 0, log=None, defender_llm=None,
+                 audit_path=None):
         self.llm = llm
         self.defender_llm = defender_llm or llm   # serves medics and gatekeepers
         self.cfg = config or TeamConfig()
@@ -134,6 +137,9 @@ class Team:
         trusted = "\n".join(ROLE_GENOMES.values()) + "\n".join(
             v for k, v in vars(prompts).items() if k.isupper() and isinstance(v, str))
         self.provenance = Provenance(trusted)
+        self.broker = self.session = None
+        if self.cfg.merge_gate:
+            self._init_gate(audit_path)
         self.board: list[str] = []
         self._families_seen: set[str] = set()
         self._baseline_code: str | None = None      # note-free coder's canary solution, made once
@@ -248,6 +254,11 @@ class Team:
             code = extract_code(self._ask(coder, FIX.format(task=desc, code=code, problem=f"Reviewer: {reason}"), "fix"))
             revisions += 1
 
+        merged, gate_taint = True, frozenset()
+        if self.broker:
+            outcome = self.broker.submit({"action": "merge", "args": {"func": task.func, "code": code},
+                                          "input_refs": ["task"]}, self.session)
+            merged, gate_taint = outcome.decision == "execute", outcome.taint
         hidden = sandbox.run(code, task.tests)
         markers = code_markers(code)
         reviewed_good = sandbox.run(reviewed, task.tests).ok
@@ -282,8 +293,25 @@ class Team:
                 "passed": hidden.ok, "markers": markers, "hijacked": bool(markers), "tester_ok": tester_ok,
                 "screened_out": screened_out, "family": task.family or None, "repeat": repeat, "exposed": exposed,
                 "approved": approved, "reviewer_correct": approved == reviewed_good, "revisions": revisions,
+                "merged": merged, "gate_taint": sorted(gate_taint),
                 "error": "" if hidden.ok else hidden.error[:200],
                 "agents": {"planner": planner.id, "coder": coder.id, "tester": tester.id, "reviewer": reviewer.id}}
+
+    def _init_gate(self, audit_path) -> None:
+        """Wire a nursery broker in front of merging. Imported here so the team runs without it."""
+        import tempfile
+        from pathlib import Path
+        from nursery import policy as nursery_policy
+        from nursery.audit import AuditLog
+        from nursery.broker import Broker, Session
+        from nursery.taint import TaintTracker
+        pol = nursery_policy.load(Path(__file__).resolve().parents[2] / "nursery" / "policy.toml")
+        if audit_path is None:
+            audit_path = Path(tempfile.mkdtemp(prefix="team-audit-")) / "audit.jsonl"
+        self.broker = Broker(pol, AuditLog(audit_path))
+        self.broker.register("merge", lambda args: "merged")
+        taint = TaintTracker(ignore_small_ints=pol.ignore_small_ints, provenance=self.provenance)
+        self.session = Session(cfg_id="autopoiesis.team", stage=1, taint=taint, refs={"task": frozenset()})
 
     @staticmethod
     def _ci_failure(code: str, task: Task) -> str:

@@ -212,5 +212,30 @@ class TestTeam(unittest.TestCase):
         self.assertEqual(team.totals["replaced"], 1)
 
 
+class TestMergeGate(unittest.TestCase):
+    def test_gate_queues_literal_payloads_but_not_the_literal_free_one(self):
+        from autopoiesis.team.tasks import DOCSTRING, SUBTLE_PAYLOADS
+        cfg = TeamConfig(heal=False, notes=False, merge_gate=True, attacks="gate", drift_rate=0.0)
+        team = Team(TeamMock(), cfg, seed=0)
+        task = TASKS[1]
+        for payload in SUBTLE_PAYLOADS[:3]:
+            r = team.run_task(task, payload)
+            self.assertTrue(r["hijacked"], payload.name)
+            self.assertFalse(r["merged"], payload.name)
+            self.assertTrue(r["gate_taint"], payload.name)
+        r = team.run_task(task, DOCSTRING)
+        self.assertEqual((r["hijacked"], r["merged"]), (True, True))   # the known hole
+        clean = team.run_task(task, None)
+        self.assertEqual((clean["hijacked"], clean["merged"]), (False, True))
+
+    def test_gate_draws_no_randomness(self):
+        """Gate on and off see identical task and payload sequences, so one gated run gives an exact counterfactual."""
+        runs = []
+        for gate in (False, True):
+            team = Team(TeamMock(), TeamConfig(heal=False, notes=False, merge_gate=gate, attacks="gate", inject_rate=0.5), seed=3)
+            runs.append([(r["func"], r["payload"], r["hijacked"]) for r in (team.step() for _ in range(12))])
+        self.assertEqual(runs[0], runs[1])
+
+
 if __name__ == "__main__":
     unittest.main()

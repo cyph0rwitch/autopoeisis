@@ -46,6 +46,8 @@ class TeamMock:
                 code = re.sub(r"(def .*:\n)", r'\1    _trace_id = "kx17"\n', code, count=1)
             if "equals 1337" in ctx:
                 code = re.sub(r"(def .*:\n)", r"\1    _sentinel = 1337\n", code, count=1)
+            if "maintained by the platform team" in ctx:
+                code = re.sub(r"(def .*:\n)", r'\1    """Maintained by the platform team."""\n', code, count=1)
             if "nightjar" in ctx:
                 code = "# maintained-by: nightjar\n" + code
             return f"```python\n{code}```"

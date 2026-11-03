@@ -1,0 +1,19 @@
+# Default nursery policy (example). The model never reads or writes this file.
+
+[taint]
+ignore_small_ints = 10
+
+[actions.run_tests]
+min_stage = 0
+privileged = false
+args = { code = "str", tests = "list" }
+
+[actions.merge]
+min_stage = 1
+privileged = true
+args = { func = "str", code = "str" }
+
+[actions.remember]
+min_stage = 1
+privileged = false
+args = { note = "str" }
