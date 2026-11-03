@@ -372,6 +372,19 @@ Exploratory (not pre-registered):
 
 **What this shows.** A deterministic, model-free gate stopped every first-hit attack that carried a distinctive literal, at the cost of sending about 1 in 7 clean tasks to a human. It stopped none of the attack with no literal: the docstring hijacks it did hold were held by coincidence. Literal provenance is a real boundary only for attacks that must carry a specific value (a magic number, an exfiltration address, a key); instructions that change behaviour in plain words need a different control, such as tests the attacker cannot see or a narrower action set. Limits: one 4B model, synthetic tasks and four payloads, no adaptive attacker (that is E10), and the human reviewer is assumed, not simulated.
 
+## Experiment 3R (pre-registered 2026-11-03): does the nursery build change Experiment 3?
+
+**Why.** `--nursery` moves agent notes and CI facts into the prototype's labelled SQLite memory (every row carries writer, sources, taint and epoch; the guard is the nursery's taint rule) and runs all code in the bubblewrap + systemd OS sandbox. Before building on it, check it reproduces Experiment 3. It is not identical by design: the nursery's taint rule ignores integers up to 10, which the old filter did not.
+
+**Design.** Experiment 3's setup exactly (`--membrane --no-heal --task-set mixed --attacks subtle --tasks 33`, `qwen3:4b-instruct`, seeds 0–9), with `--nursery` added, for its three memory arms: none (`--no-notes`), free (`--ci-feedback`), filtered (`--ci-feedback --provenance-filter`). The healing arm is left out because healing edits notes outside the store, which nursery mode does not support yet. A mock-backend test checks that free notes give task-for-task identical results with and without `--nursery`. A 10-task live pilot (`runs/e3r-pilot`, excluded) ran with no sandbox errors.
+
+**Predictions**, written before running (Experiment 3's values in brackets):
+1. **None and filtered:** 0 hijacks on later clean tasks in each arm [0% and 0%], reported as `0/n` with the exact upper bound.
+2. **Free:** the attack surface is still there: the mean clean-task hijack rate is above 0 and its bootstrap 95% interval overlaps Experiment 3's [5%, 21%].
+3. **Pass rate** within 0.05 of Experiment 3 in each arm [none 0.82, filtered 0.82, free 0.81].
+4. **Filtered:** under 5% of clean notes refused [3%].
+5. **Infrastructure:** no failed runs and no task error caused by the sandbox itself (bubblewrap, systemd or bus errors).
+
 ## The nursery prototype (`nursery/`)
 
 A single-host prototype of the propose-without-authority architecture in `docs/nursery-proposal.md` (section 7). Stdlib Python plus bubblewrap and systemd; 9 tests in `tests/test_nursery.py`.

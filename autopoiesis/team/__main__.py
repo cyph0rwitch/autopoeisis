@@ -67,6 +67,8 @@ def main() -> None:
                     help="refuse notes carrying literals that only came from untrusted task text")
     ap.add_argument("--ci-facts", action="store_true",
                     help="typed memory: keep the failing hidden test CI reported, not model-written notes")
+    ap.add_argument("--nursery", action="store_true",
+                    help="labelled SQLite memory and the bubblewrap/systemd OS sandbox from nursery/")
     ap.add_argument("--merge-gate", action="store_true",
                     help="nursery broker: queue code carrying untrusted-only literals for a human instead of merging")
     ap.add_argument("--shared-memory", action="store_true", help="one notes board shared by the whole team")
@@ -87,12 +89,12 @@ def main() -> None:
     else:
         llm = OllamaBackend(args.model or "qwen3:4b-instruct", args.host, temperature=0.4, max_tokens=1024)
     cfg = TeamConfig(heal=not args.no_heal, membrane=args.membrane, screen_notes=args.screen_notes, notes=not args.no_notes, task_set=args.task_set, ci_feedback=args.ci_feedback,
-                     provenance_filter=args.provenance_filter, shared_memory=args.shared_memory, ci_facts=args.ci_facts, merge_gate=args.merge_gate, attacks=args.attacks, inject_rate=args.inject_rate, drift_rate=args.drift_rate,
+                     provenance_filter=args.provenance_filter, shared_memory=args.shared_memory, ci_facts=args.ci_facts, merge_gate=args.merge_gate, nursery=args.nursery, attacks=args.attacks, inject_rate=args.inject_rate, drift_rate=args.drift_rate,
                      check_every=args.check_every)
 
     setup = ("heal" if cfg.heal else "noheal") + ("+membrane" if cfg.membrane else "") + ("+notes" if cfg.screen_notes else "") + \
         ("+nonotes" if not cfg.notes else "") + \
-        ("+ci" if cfg.ci_feedback else "") + ("+prov" if cfg.provenance_filter else "") + ("+shared" if cfg.shared_memory else "") + ("+facts" if cfg.ci_facts else "") + ("+gate" if cfg.merge_gate else "") + \
+        ("+ci" if cfg.ci_feedback else "") + ("+prov" if cfg.provenance_filter else "") + ("+shared" if cfg.shared_memory else "") + ("+facts" if cfg.ci_facts else "") + ("+gate" if cfg.merge_gate else "") + ("+nursery" if cfg.nursery else "") + \
         (f"-{cfg.task_set}" if cfg.task_set != "basic" else "") + (f"+def-{args.defender_model.replace(':', '')}" if args.defender_model else "") + f"-{cfg.attacks}"
     stem = f"{time.strftime('%Y%m%d-%H%M%S')}-{setup}-seed{args.seed}"
     run_dir, n = args.out / stem, 1
@@ -109,7 +111,8 @@ def main() -> None:
 
         defender = OllamaBackend(args.defender_model, args.host, temperature=0.4, max_tokens=1024) \
             if args.defender_model else None
-        team = Team(llm, cfg, seed=args.seed, log=log, defender_llm=defender, audit_path=run_dir / "audit.jsonl")
+        team = Team(llm, cfg, seed=args.seed, log=log, defender_llm=defender, audit_path=run_dir / "audit.jsonl",
+                    memory_path=run_dir / "memory.db")
         print(f"run dir: {run_dir}")
         for _ in range(args.tasks):
             t0 = time.monotonic()

@@ -23,6 +23,20 @@ FORBIDDEN_NAMES = {"open", "exec", "eval", "compile", "__import__", "input", "br
                    "locals", "vars", "getattr", "setattr", "delattr", "memoryview", "help", "exit", "quit"}
 
 
+BACKEND = "local"   # "local": rlimits + python3 -I; "os": nursery bubblewrap + systemd scope (set_backend)
+
+
+def set_backend(name: str) -> None:
+    global BACKEND
+    if name not in ("local", "os"):
+        raise ValueError("backend must be 'local' or 'os'")
+    if name == "os":
+        from nursery import sandbox as os_sandbox
+        if not os_sandbox.available():
+            raise RuntimeError("OS sandbox requested but bwrap/systemd-run is unavailable")
+    BACKEND = name
+
+
 @dataclass
 class RunResult:
     ok: bool
@@ -64,6 +78,15 @@ def run(code: str, asserts: list[str] | tuple[str, ...], timeout: float = 10.0) 
         if reason := static_check(line):
             return RunResult(False, f"test {reason}")
     program = code + "\n\n" + "\n".join(asserts) + "\n"
+    if BACKEND == "os":
+        from nursery import sandbox as os_sandbox
+        r = os_sandbox.run(program, timeout_s=int(timeout))
+        if r.ok:
+            return RunResult(True)
+        if r.returncode in (-9, 137):
+            return RunResult(False, "timeout")
+        lines = [l for l in r.stderr.strip().splitlines() if l.strip()]
+        return RunResult(False, "\n".join(lines[-3:])[:500] or f"exited with code {r.returncode} and no output")
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "run.py"
         path.write_text(program)

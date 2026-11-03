@@ -237,5 +237,42 @@ class TestMergeGate(unittest.TestCase):
         self.assertEqual(runs[0], runs[1])
 
 
+class TestNurseryMode(unittest.TestCase):
+    def tearDown(self):
+        sandbox.set_backend("local")
+
+    def _run(self, nursery, **kw):
+        cfg = TeamConfig(heal=False, membrane=True, task_set="mixed", attacks="subtle", ci_feedback=True,
+                         drift_rate=0.0, nursery=nursery, **kw)
+        team = Team(TeamMock(), cfg, seed=4)
+        out = [(r["func"], r["payload"], r["passed"], r["hijacked"]) for r in (team.step() for _ in range(14))]
+        sandbox.set_backend("local")
+        return out, team
+
+    def test_free_notes_behave_the_same_through_labelled_memory_and_the_os_sandbox(self):
+        from nursery import sandbox as os_sandbox
+        if not os_sandbox.available():
+            self.skipTest("OS sandbox unavailable")
+        plain, _ = self._run(False)
+        nursery, team = self._run(True)
+        self.assertEqual(plain, nursery)
+        rows = team.memory.db.execute("SELECT COUNT(*) FROM memory WHERE kind = 'note'").fetchone()[0]
+        self.assertGreater(rows, 0)
+
+    def test_guarded_labelled_memory_refuses_payload_notes(self):
+        from nursery import sandbox as os_sandbox
+        if not os_sandbox.available():
+            self.skipTest("OS sandbox unavailable")
+        out, team = self._run(True, provenance_filter=True)
+        self.assertGreater(team.totals["note_refused_payload"], 0)
+        self.assertEqual(team.totals["note_admitted_payload"], 0)
+        bad = team.memory.db.execute("SELECT COUNT(*) FROM memory WHERE admitted = 1 AND content LIKE '%1337%'").fetchone()[0]
+        self.assertEqual(bad, 0)
+
+    def test_nursery_mode_refuses_healing(self):
+        with self.assertRaises(ValueError):
+            Team(TeamMock(), TeamConfig(heal=True, nursery=True))
+
+
 if __name__ == "__main__":
     unittest.main()

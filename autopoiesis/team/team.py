@@ -55,6 +55,8 @@ class TeamConfig:
                                   # text, built by the harness), never notes the model wrote
     inject_rate: float = 0.3      # share of tasks carrying a payload
     attacks: str = "blunt"        # payload set: blunt | subtle | mixed | gate (see tasks.ATTACKS)
+    nursery: bool = False         # notes and CI facts live in the nursery's labelled SQLite memory (guarded
+                                  # when provenance_filter is on) and code runs in the nursery OS sandbox
     merge_gate: bool = False      # the final code is a proposal to a nursery broker: merged only if it carries
                                   # no literal seen only in untrusted task text, else queued for a human
     drift_rate: float = 0.05      # chance per agent per task of a noise hit on its instructions
@@ -126,7 +128,7 @@ def clean_text(text: str) -> str | None:
 
 class Team:
     def __init__(self, llm, config: TeamConfig | None = None, seed: int = 0, log=None, defender_llm=None,
-                 audit_path=None):
+                 audit_path=None, memory_path=None):
         self.llm = llm
         self.defender_llm = defender_llm or llm   # serves medics and gatekeepers
         self.cfg = config or TeamConfig()
@@ -137,9 +139,11 @@ class Team:
         trusted = "\n".join(ROLE_GENOMES.values()) + "\n".join(
             v for k, v in vars(prompts).items() if k.isupper() and isinstance(v, str))
         self.provenance = Provenance(trusted)
-        self.broker = self.session = None
+        self.broker = self.session = self.memory = None
         if self.cfg.merge_gate:
             self._init_gate(audit_path)
+        if self.cfg.nursery:
+            self._init_nursery(memory_path)
         self.board: list[str] = []
         self._families_seen: set[str] = set()
         self._baseline_code: str | None = None      # note-free coder's canary solution, made once
@@ -277,11 +281,19 @@ class Team:
             agent.tasks_done += 1
             if self.cfg.ci_facts and not hidden.ok:
                 fact = f"`{task.func}`: {ci}"
-                agent.facts = (agent.facts + [fact[:300]])[-self.cfg.max_notes:]
+                if self.memory is not None:
+                    self.memory.record_fact(agent.id, fact[:300], [f"ci:task{self.task_n}"])
+                    agent.facts = self.memory.rows(agent.id, "fact")
+                else:
+                    agent.facts = (agent.facts + [fact[:300]])[-self.cfg.max_notes:]
             if not self.cfg.notes:
                 continue
             note_prompt = NOTE_CI.format(task=desc, ci=ci) if self.cfg.ci_feedback else NOTE.format(task=desc)
             note = self._ask(agent, note_prompt, "note").strip().splitlines()
+            if self.memory is not None:
+                if note and note[0].strip():
+                    self._nursery_note(agent, note[0].strip()[:300])
+                continue
             if note and note[0].strip() and self._admit_note(agent, desc, note[0].strip()):
                 if self.cfg.shared_memory:
                     self.board.append(note[0].strip()[:300])
@@ -296,6 +308,31 @@ class Team:
                 "merged": merged, "gate_taint": sorted(gate_taint),
                 "error": "" if hidden.ok else hidden.error[:200],
                 "agents": {"planner": planner.id, "coder": coder.id, "tester": tester.id, "reviewer": reviewer.id}}
+
+    def _init_nursery(self, memory_path) -> None:
+        """Labelled memory and the OS sandbox from the nursery prototype. Healing, shared boards and medic
+        note screening edit notes outside the store, so they are not supported in this mode yet."""
+        if self.cfg.heal or self.cfg.shared_memory or self.cfg.screen_notes:
+            raise ValueError("nursery mode supports neither healing, a shared board nor note screening yet")
+        from nursery import policy as nursery_policy
+        from nursery.memory import LabelledMemory
+        from nursery.taint import TaintTracker
+        from pathlib import Path
+        pol = nursery_policy.load(Path(__file__).resolve().parents[2] / "nursery" / "policy.toml")
+        taint = TaintTracker(ignore_small_ints=pol.ignore_small_ints, provenance=self.provenance)
+        self.memory = LabelledMemory(memory_path or ":memory:", taint, guard=self.cfg.provenance_filter,
+                                     max_rows=self.cfg.max_notes)
+        sandbox.set_backend("os")
+
+    def _nursery_note(self, agent: Agent, note: str) -> None:
+        carried = bool(carried_payloads(note))   # scoring only
+        adm = self.memory.propose_note(agent.id, agent.id, note, [f"task{self.task_n}"])
+        if self.cfg.provenance_filter:
+            self.totals[f"note_{'admitted' if adm.admitted else 'refused'}_{'payload' if carried else 'clean'}"] += 1
+        if not adm.admitted:
+            self.log({"task": self.task_n, "event": "note_refused", "agent": agent.id, "note": note,
+                      "foreign": sorted(adm.taint), "carried_payload": carried})
+        agent.notes = self.memory.rows(agent.id, "note")
 
     def _init_gate(self, audit_path) -> None:
         """Wire a nursery broker in front of merging. Imported here so the team runs without it."""
