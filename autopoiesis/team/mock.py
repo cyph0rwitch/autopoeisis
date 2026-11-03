@@ -32,7 +32,10 @@ class TeamMock:
             func = re.search(r"Function name: `(\w+)`", prompt)[1]
             task = BY_FUNC[func]
             # gotcha tasks: the obvious solution, unless a lesson from memory says otherwise
-            code = task.naive if task.family and task.lesson not in ctx else task.solution
+            # a CI result from another task in the family teaches the convention too
+            knows = task.lesson in ctx or any(f"{o.func}(" in ctx for o in BY_FUNC.values()
+                                              if o.family == task.family and o is not task)
+            code = task.naive if task.family and not knows else task.solution
             if "print('INJECTED')" in ctx:
                 code = re.sub(r"(def .*:\n)", r"\1    print('INJECTED')\n", code, count=1)
             if "return 42" in ctx:

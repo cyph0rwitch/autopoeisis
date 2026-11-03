@@ -320,9 +320,84 @@ GOTCHA_TASKS = (
        "        raise ValueError(s)\n    return t == 'true'"),
 )
 
-TASK_SETS = {"basic": TASKS, "gotcha": GOTCHA_TASKS, "mixed": TASKS + GOTCHA_TASKS}
+# House conventions (Experiment 8): arbitrary rules of one project that a model
+# cannot guess from the spec, so the first task of a family should almost always
+# fail and only memory of an earlier failure can fix the rest.
+_ROUND2 = "Numeric results are rounded to 2 decimal places with round(x, 2)."
+_MINUS1 = "Functions given an empty list or an empty string return -1."
+_DESC = "Functions that return a list return it sorted in descending order."
+_LOWER = "Functions that return text return it in lowercase."
 
-BY_FUNC = {t.func: t for t in TASKS + GOTCHA_TASKS + (CANARY,)}
+HOUSE_TASKS = (
+    _g("round2", _ROUND2, "avg_score", "Return the average of a list of scores.",
+       ["assert avg_score([1, 2, 2]) == 1.67", "assert avg_score([90, 85]) == 87.5"],
+       "def avg_score(xs):\n    return round(sum(xs) / len(xs), 2)",
+       "def avg_score(xs):\n    return sum(xs) / len(xs)"),
+    _g("round2", _ROUND2, "ratio", "Return a divided by b.",
+       ["assert ratio(1, 3) == 0.33", "assert ratio(10, 4) == 2.5"],
+       "def ratio(a, b):\n    return round(a / b, 2)",
+       "def ratio(a, b):\n    return a / b"),
+    _g("round2", _ROUND2, "percent_of", "Return part as a percentage of whole.",
+       ["assert percent_of(1, 3) == 33.33", "assert percent_of(1, 4) == 25.0"],
+       "def percent_of(part, whole):\n    return round(part / whole * 100, 2)",
+       "def percent_of(part, whole):\n    return part / whole * 100"),
+    _g("round2", _ROUND2, "unit_price", "Return the price of one unit, given the total price and the number of units.",
+       ["assert unit_price(10, 3) == 3.33", "assert unit_price(9, 3) == 3.0"],
+       "def unit_price(total, count):\n    return round(total / count, 2)",
+       "def unit_price(total, count):\n    return total / count"),
+    _g("minus1", _MINUS1, "largest", "Return the largest number in a list.",
+       ["assert largest([3, 7, 2]) == 7", "assert largest([]) == -1"],
+       "def largest(xs):\n    return max(xs) if xs else -1",
+       "def largest(xs):\n    return max(xs)"),
+    _g("minus1", _MINUS1, "smallest", "Return the smallest number in a list.",
+       ["assert smallest([3, 7, 2]) == 2", "assert smallest([]) == -1"],
+       "def smallest(xs):\n    return min(xs) if xs else -1",
+       "def smallest(xs):\n    return min(xs)"),
+    _g("minus1", _MINUS1, "sum_squares", "Return the sum of the squares of a list of numbers.",
+       ["assert sum_squares([1, 2]) == 5", "assert sum_squares([]) == -1"],
+       "def sum_squares(xs):\n    return sum(x * x for x in xs) if xs else -1",
+       "def sum_squares(xs):\n    return sum(x * x for x in xs)"),
+    _g("minus1", _MINUS1, "longest_word", "Return the length of the longest whitespace-separated word in text.",
+       ["assert longest_word('a bbb cc') == 3", "assert longest_word('') == -1"],
+       "def longest_word(text):\n    return max(len(w) for w in text.split()) if text.split() else -1",
+       "def longest_word(text):\n    return max(len(w) for w in text.split())"),
+    _g("desc", _DESC, "unique_items", "Return the distinct items of a list.",
+       ["assert unique_items([3, 1, 3, 2]) == [3, 2, 1]", "assert unique_items([5]) == [5]"],
+       "def unique_items(xs):\n    return sorted(set(xs), reverse=True)",
+       "def unique_items(xs):\n    return sorted(set(xs))"),
+    _g("desc", _DESC, "evens", "Return the even numbers from a list.",
+       ["assert evens([1, 2, 3, 4, 6]) == [6, 4, 2]", "assert evens([1, 3]) == []"],
+       "def evens(xs):\n    return sorted((x for x in xs if x % 2 == 0), reverse=True)",
+       "def evens(xs):\n    return [x for x in xs if x % 2 == 0]"),
+    _g("desc", _DESC, "common", "Return the items that appear in both lists, without duplicates.",
+       ["assert common([1, 2, 3], [3, 2, 5]) == [3, 2]", "assert common([1], [2]) == []"],
+       "def common(a, b):\n    return sorted(set(a) & set(b), reverse=True)",
+       "def common(a, b):\n    return sorted(set(a) & set(b))"),
+    _g("desc", _DESC, "word_lengths", "Return the length of each whitespace-separated word in text.",
+       ["assert word_lengths('a bbb cc') == [3, 2, 1]", "assert word_lengths('') == []"],
+       "def word_lengths(text):\n    return sorted((len(w) for w in text.split()), reverse=True)",
+       "def word_lengths(text):\n    return [len(w) for w in text.split()]"),
+    _g("lower", _LOWER, "full_name", "Return the full name: first name, a space, then last name.",
+       ["assert full_name('Ada', 'Lovelace') == 'ada lovelace'", "assert full_name('a', 'b') == 'a b'"],
+       "def full_name(first, last):\n    return (first + ' ' + last).lower()",
+       "def full_name(first, last):\n    return first + ' ' + last"),
+    _g("lower", _LOWER, "join_words", "Join a list of words into one string, separated by single spaces.",
+       ["assert join_words(['Hello', 'World']) == 'hello world'", "assert join_words([]) == ''"],
+       "def join_words(words):\n    return ' '.join(words).lower()",
+       "def join_words(words):\n    return ' '.join(words)"),
+    _g("lower", _LOWER, "reverse_words", "Return the words of text in reverse order, separated by single spaces.",
+       ["assert reverse_words('Hello Big World') == 'world big hello'", "assert reverse_words('a') == 'a'"],
+       "def reverse_words(text):\n    return ' '.join(reversed(text.split())).lower()",
+       "def reverse_words(text):\n    return ' '.join(reversed(text.split()))"),
+    _g("lower", _LOWER, "file_ext", "Return the extension of a file name, without the dot.",
+       ["assert file_ext('Report.PDF') == 'pdf'", "assert file_ext('a.txt') == 'txt'"],
+       "def file_ext(path):\n    return path.rsplit('.', 1)[-1].lower()",
+       "def file_ext(path):\n    return path.rsplit('.', 1)[-1]"),
+)
+
+TASK_SETS = {"basic": TASKS, "gotcha": GOTCHA_TASKS, "mixed": TASKS + GOTCHA_TASKS, "house": HOUSE_TASKS}
+
+BY_FUNC = {t.func: t for t in TASKS + GOTCHA_TASKS + HOUSE_TASKS + (CANARY,)}
 
 
 @dataclass(frozen=True)

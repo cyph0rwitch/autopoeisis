@@ -124,6 +124,28 @@ class TestTeam(unittest.TestCase):
             self.assertTrue(sandbox.run(t.solution, t.tests).ok, t.func)
             self.assertFalse(sandbox.run(t.naive, t.tests).ok, t.func)
 
+    def test_house_tasks_need_the_convention(self):
+        from autopoiesis.team.tasks import BY_FUNC, GOTCHA_TASKS, HOUSE_TASKS
+        self.assertEqual(len(BY_FUNC), len(TASKS) + len(GOTCHA_TASKS) + len(HOUSE_TASKS) + 1)   # no name clashes
+        for t in HOUSE_TASKS:
+            self.assertTrue(sandbox.run(t.solution, t.tests).ok, t.func)
+            self.assertFalse(sandbox.run(t.naive, t.tests).ok, t.func)
+
+    def test_ci_facts_teach_without_model_written_memory(self):
+        def run(**kw):
+            team = Team(TeamMock(), TeamConfig(heal=False, attacks="subtle", inject_rate=0.4, task_set="house", **kw),
+                        seed=2)
+            return team, [team.step() for _ in range(32)]
+        repeat = lambda rs: sum(r["passed"] for r in rs if r["repeat"])
+        _, none = run(notes=False)
+        team, facts = run(notes=False, ci_facts=True)
+        self.assertGreater(repeat(facts), repeat(none))
+        self.assertEqual(sum(r["hijacked"] for r in facts if r["payload"] is None), 0)
+        self.assertTrue(any(a.facts for a in team.agents))
+        self.assertTrue(all(not a.notes for a in team.agents))
+        self.assertTrue(all(f.split(":", 1)[1].strip().startswith("hidden tests failed") for a in team.agents
+                            for f in a.facts))
+
     def test_literals(self):
         from autopoiesis.team.provenance import literals
         self.assertEqual(literals('first line is _trace_id = "kx17"'), {"_trace_id", "kx17"})
