@@ -289,5 +289,33 @@ class TestAdaptiveAttacker(unittest.TestCase):
         self.assertEqual(none["first_try_rate"], 1.0)
 
 
+class TestCompartments(unittest.TestCase):
+    def tearDown(self):
+        sandbox.set_backend("local")
+
+    def _poison_readers(self, compartments):
+        from nursery import sandbox as os_sandbox
+        if not os_sandbox.available():
+            self.skipTest("OS sandbox unavailable")
+        cfg = TeamConfig(heal=False, task_set="house", attacks="gate", ci_feedback=True, shared_memory=True,
+                         nursery=True, compartments=compartments, drift_rate=0.0, inject_rate=0.5)
+        team = Team(TeamMock(), cfg, seed=2)
+        results = [team.step() for _ in range(12)]
+        sandbox.set_backend("local")
+        role = {a.id: a.role for a in team.agents}
+        return [(role[v["writer"]], {role[r] for r in v["readers"]}) for r in results for v in r["visible_poison"]]
+
+    def test_compartments_keep_poisoned_notes_inside_the_writers_role(self):
+        shared = self._poison_readers(False)
+        self.assertTrue(any(len(readers) > 1 for _, readers in shared))      # a shared board reaches every role
+        boxed = self._poison_readers(True)
+        self.assertTrue(boxed)
+        self.assertTrue(all(readers == {writer} for writer, readers in boxed))
+
+    def test_compartments_need_a_shared_board(self):
+        with self.assertRaises(ValueError):
+            Team(TeamMock(), TeamConfig(heal=False, nursery=True, compartments=True))
+
+
 if __name__ == "__main__":
     unittest.main()

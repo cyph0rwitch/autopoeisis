@@ -87,10 +87,14 @@ class LabelledMemory:
         self.taint.trusted(content)
         self._insert(owner, "fact", HARNESS, content, sources, frozenset(), True, "harness fact")
 
-    def rows(self, owner: str, kind: str | None = None) -> list[str]:
-        q = "SELECT content FROM memory WHERE owner = ? AND admitted = 1" + (" AND kind = ?" if kind else "")
+    def rows(self, owner: str, kind: str | None = None, limit: int | None = None) -> list[str]:
+        return [r[2] for r in self.labelled_rows(owner, kind, limit)]
+
+    def labelled_rows(self, owner: str, kind: str | None = None, limit: int | None = None) -> list[tuple]:
+        """(id, writer, content) of the admitted rows an owner sees, oldest first."""
+        q = "SELECT id, writer, content FROM memory WHERE owner = ? AND admitted = 1" + (" AND kind = ?" if kind else "")
         args = (owner, kind) if kind else (owner,)
-        return [r[0] for r in self.db.execute(q + " ORDER BY id DESC LIMIT ?", (*args, self.max_rows))][::-1]
+        return list(self.db.execute(q + " ORDER BY id DESC LIMIT ?", (*args, limit or self.max_rows)))[::-1]
 
     def render(self, owner: str) -> str:
         parts = []
