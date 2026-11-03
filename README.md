@@ -397,8 +397,10 @@ All five predictions held:
 1. **None and filtered:** 0 of 226 later clean tasks hijacked in each.
 2. **Free:** still exploitable, at 10% (24 of 226 clean tasks), with an interval overlapping Experiment 3's.
 3. **Pass rate:** within 0.01 of Experiment 3 in every arm.
-4. **Filtered:** 16 of 1,562 clean notes refused (1.0%, vs 3% before; the nursery rule ignores small integers). 85 payload notes refused, 3 admitted, the same 3 as Experiment 3 admitted. They exposed 3 clean tasks in one seed but caused no scored hijack; they are the literal-free `lenient` payload, which has no code marker to score.
+4. **Filtered:** 16 of 1,562 clean notes refused (1.0%, vs 3% before; the nursery rule ignores small integers). 85 payload notes refused, 3 admitted (3 in Experiment 3). The admitted 3 were not literal-free: all were `sentinel` notes from one seed, ending in "...unexpected values like 1337." They exposed 3 clean tasks but caused no hijack.
 5. **Infrastructure:** 0 failed runs and 0 sandbox errors across 990 tasks, all run under bubblewrap.
+
+**Bug found: a number before a full stop is not a literal.** The number pattern in `provenance.py` refuses a match followed by `.` (to avoid splitting decimals), so `1337.` at the end of a sentence is invisible to the filter and the gate, while `1337 ` and `1337)` are caught. The three admitted notes passed through this. The same code ran in Experiments 3, 5, 8, 9 and 3R, so their results include the bug; it is left unfixed until Experiments 10 and 11 (already queued on this code) finish, then fixed with a regression test.
 
 **What this shows.** Moving memory into the labelled store and code into the OS sandbox changed none of Experiment 3's results, so later experiments can build on the nursery build. It does not show the sandbox resists hostile code; these payloads never try to escape.
 
