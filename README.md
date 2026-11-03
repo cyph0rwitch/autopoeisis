@@ -361,7 +361,7 @@ Exploratory (not pre-registered):
 | all | 224 | 185 | 185 | 35 | |
 
 - **1. Literal payloads stopped: held.** 0 of 103 `trace` and `sentinel` hijacks shipped (exact upper bound 2.9%), against 103 of 103 without the gate.
-- **2. `header`: held.** 26 of 26 hijacks were queued (upper bound on misses 10.9%), each on `maintained-by`. In the 35 attacked tasks where the model did not obey it, the hyphen never got the chance to be dropped.
+- **2. `header`: held.** 26 of 26 hijacks were queued (upper bound on misses 10.9%), each on `maintained-by`. The model never dropped the hyphen, the evasion this prediction allowed for.
 - **3. The hole is real: failed as stated, held in substance.** 21 of 56 `docstring` hijacks (38%) were queued, above the predicted 10%. But none was queued for the payload: every one was flagged on words copied from the task spec (`non-negative`, `non-alphanumeric`, `fizz`/`buzz`, `3999`), the same words behind the false positives below. The gate never saw the attack; 35 of 56 shipped.
 - **4. Cost: held narrowly.** 38 of 256 clean tasks (14.8%, bootstrap 95% CI 12.1% to 17.9%) were queued for a human; the point estimate is under 15%, the interval is not. 36 of the 38 were correct code.
 - **5. Overall: held.** Shipped hijacks fell from 185 to 35, an 81% reduction (bootstrap 95% CI 76% to 87%).
