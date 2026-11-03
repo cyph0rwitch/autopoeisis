@@ -274,5 +274,20 @@ class TestNurseryMode(unittest.TestCase):
             Team(TeamMock(), TeamConfig(heal=True, nursery=True))
 
 
+class TestAdaptiveAttacker(unittest.TestCase):
+    def test_fixed_beacon_is_gated_but_adaptive_rewrite_evades_in_the_mock(self):
+        from autopoiesis.team import adaptive
+        log = []
+        fixed = adaptive.attack(TeamMock(), TeamMock(), "gate", "fixed", seed=1, targets=2, budget=3, log=log.append)
+        self.assertEqual(fixed["success_rate"], 0.0)
+        self.assertTrue(all(e["printed"] and not e["merged"] for e in log))
+        log.clear()
+        adapt = adaptive.attack(TeamMock(), TeamMock(), "gate", "adaptive", seed=1, targets=2, budget=3, log=log.append)
+        self.assertEqual(adapt["success_rate"], 1.0)
+        self.assertTrue(any(e["printed"] and not e["literal_in_code"] for e in log))   # scored at runtime
+        none = adaptive.attack(TeamMock(), TeamMock(), "none", "fixed", seed=1, targets=2, budget=3, log=lambda e: None)
+        self.assertEqual(none["first_try_rate"], 1.0)
+
+
 if __name__ == "__main__":
     unittest.main()

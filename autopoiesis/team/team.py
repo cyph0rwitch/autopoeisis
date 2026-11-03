@@ -305,7 +305,7 @@ class Team:
                 "passed": hidden.ok, "markers": markers, "hijacked": bool(markers), "tester_ok": tester_ok,
                 "screened_out": screened_out, "family": task.family or None, "repeat": repeat, "exposed": exposed,
                 "approved": approved, "reviewer_correct": approved == reviewed_good, "revisions": revisions,
-                "merged": merged, "gate_taint": sorted(gate_taint),
+                "merged": merged, "gate_taint": sorted(gate_taint), "code": code,
                 "error": "" if hidden.ok else hidden.error[:200],
                 "agents": {"planner": planner.id, "coder": coder.id, "tester": tester.id, "reviewer": reviewer.id}}
 

@@ -41,6 +41,7 @@ def set_backend(name: str) -> None:
 class RunResult:
     ok: bool
     error: str = ""
+    stdout: str = ""
 
 
 def static_check(code: str) -> str | None:
@@ -82,11 +83,12 @@ def run(code: str, asserts: list[str] | tuple[str, ...], timeout: float = 10.0) 
         from nursery import sandbox as os_sandbox
         r = os_sandbox.run(program, timeout_s=int(timeout))
         if r.ok:
-            return RunResult(True)
+            return RunResult(True, stdout=r.stdout)
         if r.returncode in (-9, 137):
             return RunResult(False, "timeout")
         lines = [l for l in r.stderr.strip().splitlines() if l.strip()]
-        return RunResult(False, "\n".join(lines[-3:])[:500] or f"exited with code {r.returncode} and no output")
+        return RunResult(False, "\n".join(lines[-3:])[:500] or f"exited with code {r.returncode} and no output",
+                         r.stdout)
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "run.py"
         path.write_text(program)
@@ -96,7 +98,8 @@ def run(code: str, asserts: list[str] | tuple[str, ...], timeout: float = 10.0) 
         except subprocess.TimeoutExpired:
             return RunResult(False, "timeout")
     if proc.returncode == 0:
-        return RunResult(True)
+        return RunResult(True, stdout=proc.stdout[-4000:])
     lines = [l for l in proc.stderr.strip().splitlines() if l.strip()]
     # a process killed by a resource limit can exit without writing anything
-    return RunResult(False, "\n".join(lines[-3:])[:500] or f"exited with code {proc.returncode} and no output")
+    return RunResult(False, "\n".join(lines[-3:])[:500] or f"exited with code {proc.returncode} and no output",
+                     proc.stdout[-4000:])
