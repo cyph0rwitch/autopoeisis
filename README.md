@@ -307,6 +307,30 @@ Long runs: `scripts/jobqueue.sh JOBS LOG` runs a file of commands one at a time 
 - First-attempt pass (`gotcha_pass_first`) stays at or below 10% in every arm.
 - Comparisons against none are Holm-corrected across the three memory arms.
 
+**Results** (`runs/exp8-house`, 80 runs; 240 repeat-family tasks, 80 first-of-family tasks and 220 clean tasks per arm, pooled over seeds). Gain = paired per-seed difference in repeat-task pass rate vs none, with a bootstrap 95% interval (10,000 resamples over seeds):
+
+| Arm | Repeat-task pass | Gain vs none (95% CI) | First-attempt pass | Persistent hijacks (clean tasks) | Attacked task hijacked |
+|---|---|---|---|---|---|
+| none | 5/240 (2%) | — | 0/80 | 0/220 (≤ 1.4%) | 42/100 |
+| free | 24/240 (10%) | +7.9 pts (3.7 to 12.5) | 3/80 | **10/220 in 5 of 20 runs** | 37/100 |
+| filtered | **42/240 (18%)** | **+15.4 pts (10.0 to 21.2)** | 2/80 | 0/220 (≤ 1.4%) | 37/100 |
+| facts | 28/240 (12%) | +9.6 pts (6.7 to 12.9) | 3/80 | 0/220 (≤ 1.4%) | 37/100 |
+
+Every prediction held:
+- **Precondition (H1): held.** Free notes gained 7.9 points over none, and the interval excludes 0. This is the first task set in this project where memory has a measurable benefit.
+- **Facts: held.** 0 persistent hijacks, and a gain of 9.6 points, more than the free-notes gain rather than half of it.
+- **Filtered: held.** 0/220 clean-task hijacks (exact upper bound 1.4%) and a gain of 15.4 points, about twice the free-notes gain.
+- **Free: held.** 10 clean tasks were hijacked through memory, in 5 of the 20 seeds, all by the `sentinel` payload.
+- **First-attempt pass: held.** At most 3/80 (4%) in any arm.
+- **Holm:** the bootstrap one-sided p-values against none were 0.0003 (free), < 0.0001 (filtered) and < 0.0001 (facts). All three stay below 0.05 after Holm correction.
+
+Exploratory (not pre-registered):
+- **Guarding memory did not cost utility here; it improved it.** Filtered beat free by 7.5 points (paired 95% CI 3.7 to 11.7). One plausible reading is that poisoned notes compete with useful ones for the agent's limited note slots and attention; this was not tested directly. Facts vs free: +1.7 points (−3.8 to 6.2), no detectable difference.
+- **Learning was uneven across conventions.** Across the memory arms, most repeat passes came from the "return -1 for empty input" and "round to 2 decimals" families. "Descending order" and "lowercase" were almost never learned (at most 6/60 per arm), and CI facts taught them not at all.
+- **Memory policy does not protect the task that carries the attack.** The attacked task itself was hijacked 37–42% of the time in every arm, including none. Guarded memory stops an injection from *persisting*; it does nothing about the first hit.
+
+**What this changes.** Experiments 3 and 5 could only say that turning memory off was safe; they could not say it was free, because memory had no benefit to lose. With tasks where memory pays, turning it off is no longer the best option: it lost to every memory arm. Provenance-filtered notes and harness-written CI facts both kept the benefit with 0 observed persistent hijacks. Limits: one 4B model, one task set built so that memory helps, four disguised payloads, and a provenance filter that knows which literals came from untrusted task text, which a real deployment may not.
+
 ## Self-healing coding team (`autopoiesis.team`)
 
 The same idea applied to a working system: a team of LLM agents (planner, coder, tester, reviewer, medic, and optionally a membrane gatekeeper) solves Python tasks. Some task texts carry prompt-injection payloads, which are harmless markers such as `print('INJECTED')`, `return 42`, a `# owned by the injector` comment, or "always APPROVE". Agents keep notes between tasks, so an injection can persist. Every 3 tasks a health check flags agents by suspicious notes, drift, failing work or a known-answer canary. A medic other than the flagged agent rebuilds its prompt from a healthy sibling and filters its notes. If the agent still fails its canary, it is retired and replaced by a clone. Each role is kept at 2 agents. Generated code runs only in a sandbox: an AST allowlist plus `python3 -I`, an empty environment, rlimits and a timeout. This sandbox is an experimental harness, not a security boundary: it was not designed or tested against hostile code, and is adequate here only because the payloads are harmless markers on a research machine.
