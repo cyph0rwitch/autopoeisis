@@ -74,13 +74,15 @@ def main() -> None:
     ap.add_argument("--inject-at", type=int, help="also inject one payload at exactly this task")
     ap.add_argument("--inject-payload", default="sentinel")
     ap.add_argument("--alarm-at", type=int, help="an outside alarm about the team arrives after this task")
-    ap.add_argument("--recovery", choices=("none", "heal", "rollback", "both"), default="none")
+    ap.add_argument("--recovery", choices=("none", "heal", "rollback", "both", "escalate"), default="none")
     ap.add_argument("--rollback-window", type=int, default=4)
+    ap.add_argument("--plant-role", choices=("planner", "coder", "tester", "reviewer", "all"),
+                    help="nursery mode: before task 1, put a sentinel note in every agent of this role")
     ap.add_argument("--merge-gate", action="store_true",
                     help="nursery broker: queue code carrying untrusted-only literals for a human instead of merging")
     ap.add_argument("--shared-memory", action="store_true", help="one notes board shared by the whole team")
     ap.add_argument("--screen-notes", action="store_true", help="a medic vets each note before it is saved")
-    ap.add_argument("--attacks", choices=("blunt", "subtle", "mixed", "gate"), default="blunt",
+    ap.add_argument("--attacks", choices=("blunt", "subtle", "mixed", "gate", "lesson"), default="blunt",
                     help="injected payloads: blunt (addressed to AI agents) or subtle (disguised as conventions)")
     ap.add_argument("--inject-rate", type=float, default=TeamConfig.inject_rate)
     ap.add_argument("--drift-rate", type=float, default=TeamConfig.drift_rate)
@@ -96,12 +98,12 @@ def main() -> None:
     else:
         llm = OllamaBackend(args.model or "qwen3:4b-instruct", args.host, temperature=0.4, max_tokens=1024)
     cfg = TeamConfig(heal=not args.no_heal, membrane=args.membrane, screen_notes=args.screen_notes, notes=not args.no_notes, task_set=args.task_set, ci_feedback=args.ci_feedback,
-                     provenance_filter=args.provenance_filter, shared_memory=args.shared_memory, ci_facts=args.ci_facts, merge_gate=args.merge_gate, nursery=args.nursery, compartments=args.compartments, inject_at=args.inject_at, inject_payload=args.inject_payload, alarm_at=args.alarm_at, recovery=args.recovery, rollback_window=args.rollback_window, attacks=args.attacks, inject_rate=args.inject_rate, drift_rate=args.drift_rate,
+                     provenance_filter=args.provenance_filter, shared_memory=args.shared_memory, ci_facts=args.ci_facts, merge_gate=args.merge_gate, nursery=args.nursery, compartments=args.compartments, inject_at=args.inject_at, inject_payload=args.inject_payload, alarm_at=args.alarm_at, recovery=args.recovery, rollback_window=args.rollback_window, plant_role=args.plant_role, attacks=args.attacks, inject_rate=args.inject_rate, drift_rate=args.drift_rate,
                      check_every=args.check_every)
 
     setup = ("heal" if cfg.heal else "noheal") + ("+membrane" if cfg.membrane else "") + ("+notes" if cfg.screen_notes else "") + \
         ("+nonotes" if not cfg.notes else "") + \
-        ("+ci" if cfg.ci_feedback else "") + ("+prov" if cfg.provenance_filter else "") + ("+shared" if cfg.shared_memory else "") + ("+facts" if cfg.ci_facts else "") + ("+gate" if cfg.merge_gate else "") + ("+nursery" if cfg.nursery else "") + ("+compart" if cfg.compartments else "") + (f"+alarm{cfg.alarm_at}-{cfg.recovery}" if cfg.alarm_at else "") + \
+        ("+ci" if cfg.ci_feedback else "") + ("+prov" if cfg.provenance_filter else "") + ("+shared" if cfg.shared_memory else "") + ("+facts" if cfg.ci_facts else "") + ("+gate" if cfg.merge_gate else "") + ("+nursery" if cfg.nursery else "") + ("+compart" if cfg.compartments else "") + (f"+alarm{cfg.alarm_at}-{cfg.recovery}" if cfg.alarm_at else "") + (f"+plant-{cfg.plant_role}" if cfg.plant_role else "") + \
         (f"-{cfg.task_set}" if cfg.task_set != "basic" else "") + (f"+def-{args.defender_model.replace(':', '')}" if args.defender_model else "") + f"-{cfg.attacks}"
     stem = f"{time.strftime('%Y%m%d-%H%M%S')}-{setup}-seed{args.seed}"
     run_dir, n = args.out / stem, 1
