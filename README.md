@@ -481,27 +481,6 @@ All six predictions held:
 4. **Compartments help less than they seem to:** compartments cut clean-task `docstring` hijacks relative to the shared filtered arm by less than half, because the role that obeys the payload (coders) shares a compartment.
 5. **Utility:** compartments' repeat-task pass rate is at least the shared filtered arm's (Experiment 5 found agents misled by other roles' irrelevant notes).
 
-**Results** (`runs/exp11-compart`, 40 runs; 231 clean tasks and 280 repeat-family tasks per arm; means over seeds with bootstrap 95% intervals):
-
-| Memory | Later clean tasks hijacked | Poisoned notes on a board | Other agents who could read each | Repeat-task pass |
-|---|---|---|---|---|
-| shared free | 12/231 (5.4%, all `sentinel`) | 44 | 5.5 (max 7) | 13% |
-| shared filtered | **0/231** (≤ 1.3%) | 0 | – | 10% |
-| compartments filtered | **0/231** (≤ 1.3%) | 1 | 1 | **20%** |
-| private filtered | **0/231** (≤ 1.3%) | 0 (2 private) | – | 16% |
-
-1. **Mechanism check: held.** The one poisoned note that reached a compartment board was readable by 1 other agent, of the writer's role; 0 violations.
-2. **Literal payloads: held.** 0 of 231 clean tasks hijacked in each filtered arm. Three `sentinel` notes still got into filtered memory (1 compartment, 2 private), all ending "...like 1337.", the full-stop bug found in Experiment 3R; none led to a hijack.
-3. **`docstring` on a shared board: unmeasured.** The model obeyed `docstring` on 80 of 84 attacked tasks across arms but wrote it into a note once in 40 runs. Nothing literal-free ever reached a board, so the filter's blind spot was never exercised.
-4. **Compartments vs the docstring spread: unmeasured,** for the same reason.
-5. **Utility: held.** Compartments beat the shared filtered board by 10.0 points on repeat tasks (paired 95% CI 7.1 to 12.9).
-
-Exploratory (not pre-registered):
-- **A free shared board still spreads literal payloads,** as in Experiment 5: each poisoned note was visible to 5.5 other agents on average, and 12 clean tasks were hijacked.
-- **Compartments did not cost utility relative to private notes** (+3.6 points, −2.9 to 10.0), while a single shared board did (shared filtered minus private filtered: −6.4 points, −12.9 to 0.0). Sharing within a role seems to keep what helps and drop what misleads.
-
-**What this shows.** The compartment rule worked as built and paid for itself in utility, but this experiment could not test what it was for. In 40 runs the model almost never turned a literal-free instruction into a note, so on this setup injections persist through literals, which the filter already stops. Testing compartments against literal-free spread needs a payload that asks to be written down in plain words, or an attacker that targets the notes directly.
-
 **Results** (`runs/exp11-compart`, 40 runs; 231 clean tasks and 280 repeat-family tasks per arm):
 
 | Memory | Clean tasks hijacked later | Poisoned notes on boards | Other agents who could read each | Repeat-task pass (95% CI) |
