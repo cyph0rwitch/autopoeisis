@@ -317,6 +317,48 @@ class TestCompartments(unittest.TestCase):
             Team(TeamMock(), TeamConfig(heal=False, nursery=True, compartments=True))
 
 
+class TestRecovery(unittest.TestCase):
+    def tearDown(self):
+        sandbox.set_backend("local")
+
+    def _run(self, recovery, window=4, alarm=5):
+        from nursery import sandbox as os_sandbox
+        if not os_sandbox.available():
+            self.skipTest("OS sandbox unavailable")
+        cfg = TeamConfig(heal=False, task_set="house", ci_feedback=True, nursery=True, drift_rate=0.0,
+                         inject_rate=0.0, inject_at=3, alarm_at=alarm, recovery=recovery, rollback_window=window)
+        team = Team(TeamMock(), cfg, seed=5)
+        results = [team.step() for _ in range(8)]
+        sandbox.set_backend("local")
+        return team, results
+
+    def test_rollback_before_the_injection_removes_the_poison(self):
+        team, results = self._run("rollback", window=4)
+        rec = results[4]["recovery"]
+        self.assertGreater(rec["payload_notes_removed"], 0)
+        self.assertEqual(rec["payload_notes_left"], 0)
+        self.assertEqual(rec["calls"], 0)                       # no model involved
+        self.assertFalse(any(r["hijacked"] for r in results[5:]))
+
+    def test_rollback_too_short_keeps_the_poison(self):
+        team, results = self._run("rollback", window=1)
+        self.assertGreater(results[4]["recovery"]["payload_notes_left"], 0)
+
+    def test_every_arm_sees_the_same_tasks(self):
+        orders = [[r["func"] for r in self._run(mode)[1]] for mode in ("none", "heal", "both")]
+        self.assertEqual(orders[0], orders[1])
+        self.assertEqual(orders[0], orders[2])
+
+    def test_heal_uses_medics_and_records_what_it_removed(self):
+        team, results = self._run("heal")
+        rec = results[4]["recovery"]
+        self.assertGreater(rec["calls"], 0)
+        # the mock medic's filter only knows overt phrasing, so the disguised payload survives healing
+        self.assertGreater(rec["payload_notes_left"], 0)
+        left = sum(1 for a in team.agents for n in a.notes if "1337" in n)
+        self.assertGreater(left, 0)
+
+
 class TestLiterals(unittest.TestCase):
     def test_a_number_before_a_full_stop_is_still_a_literal(self):
         from autopoiesis.team.provenance import literals

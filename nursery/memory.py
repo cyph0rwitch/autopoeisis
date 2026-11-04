@@ -105,6 +105,21 @@ class LabelledMemory:
                          + "\n".join(f"- {f}" for f in facts))
         return "\n\n".join(parts)
 
+    def remove(self, owner: str, keep: list[str], by: str) -> list[str]:
+        """Withdraw an owner's admitted notes whose text is not in `keep` (e.g. a medic's filter).
+        Rows are kept for audit, marked not admitted. Returns the withdrawn contents."""
+        rows = self.db.execute("SELECT id, content FROM memory WHERE owner = ? AND kind = 'note' AND admitted = 1",
+                               (owner,)).fetchall()
+        gone = [(i, c) for i, c in rows if c not in keep]
+        self.db.executemany("UPDATE memory SET admitted = 0, reason = ? WHERE id = ?",
+                            [(f"withdrawn by {by}", i) for i, _ in gone])
+        self.db.commit()
+        return [c for _, c in gone]
+
+    def admitted_after(self, epoch: int) -> list[tuple]:
+        """(owner, content) of admitted rows a rollback to `epoch` would drop."""
+        return list(self.db.execute("SELECT owner, content FROM memory WHERE epoch > ? AND admitted = 1", (epoch,)))
+
     def rollback(self, epoch: int) -> int:
         """Drop every row written after `epoch`; returns how many were dropped."""
         n = self.db.execute("DELETE FROM memory WHERE epoch > ?", (epoch,)).rowcount
