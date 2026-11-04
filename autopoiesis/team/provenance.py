@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import re
 
-_NUMBER = re.compile(r"(?<![\w.])-?\d+(?:\.\d+)?(?![\w.])")
+# a full stop ends a number unless a digit follows it ("1337." at the end of a sentence is 1337)
+_NUMBER = re.compile(r"(?<![\w.])-?\d+(?:\.\d+)?(?!\w|\.\d)")
 _QUOTED = re.compile(r"'([^'\n]{1,60})'|\"([^\"\n]{1,60})\"|`([^`\n]{1,60})`")
 _CODEISH = re.compile(r"\b(?=[A-Za-z_\d]*[_\d])(?=[A-Za-z_\d]*[A-Za-z])[A-Za-z_\d]{2,}\b")
 _COMPOUND = re.compile(r"\b[A-Za-z]+(?:-[A-Za-z]+)+\b")

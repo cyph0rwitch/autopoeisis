@@ -317,5 +317,14 @@ class TestCompartments(unittest.TestCase):
             Team(TeamMock(), TeamConfig(heal=False, nursery=True, compartments=True))
 
 
+class TestLiterals(unittest.TestCase):
+    def test_a_number_before_a_full_stop_is_still_a_literal(self):
+        from autopoiesis.team.provenance import literals
+        self.assertIn("1337", literals("unexpected values like 1337."))
+        self.assertIn("3.14", literals("pi is 3.14."))
+        self.assertEqual(literals("version 1.5 here") & {"1", "5"}, set())
+        self.assertIn("1.5", literals("version 1.5 here"))
+
+
 if __name__ == "__main__":
     unittest.main()
