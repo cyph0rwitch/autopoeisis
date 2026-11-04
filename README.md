@@ -504,6 +504,30 @@ Exploratory (not pre-registered):
 
 Exploratory: which recovery throws away more useful notes. No prediction.
 
+**Results** (`runs/exp12-recovery`, 80 runs, all completed). The team obeyed the injection on its own task in 80 of 80 runs. Per arm there were 293 clean tasks after the alarm, pooled over seeds. Intervals are bootstrap 95% over seeds (10,000 resamples). Arms share seeds and task order, but the model is stochastic, so memory at the alarm differs between arms of the same seed.
+
+| Arm | Post-alarm clean-task hijacks | Seeds with any | Payload notes left after recovery (seeds) | Clean notes removed | Model calls per recovery | Post-alarm pass rate |
+|---|---|---|---|---|---|---|
+| none | 26/293 = 8.9% (3.2–15.6) | 9/20 | n/a | 0 | 0 | 0.164 |
+| rollback | 7/293 = 2.4% (0.3–4.9) | 4/20 | 19 notes (8 seeds) | 301 | 0 | 0.171 |
+| heal | **0/293** | 0/20 | 9 notes (8 seeds) | 187 (+12 with retired agents) | 28–29 | 0.147 |
+| both | **0/293** | 0/20 | 2 notes (2 seeds) | 343 (+6 with retired agents) | 27–29 | 0.171 |
+
+Paired differences in post-alarm hijack rate: heal − none and both − none −8.9 points (−15.6 to −3.2); rollback − none −6.5 (−13.9 to 0.0); both − rollback −2.4 (−4.9 to −0.3); both − heal 0. A 0/293 count is clustered by seed: it bounds the per-task rate at 1.0% only if tasks are independent; the seed-level bound (0 of 20 seeds) is 13.9%.
+
+Against the predictions:
+1. **Precondition held.** The none arm had payload notes at the alarm in 14 of 20 seeds.
+2. **Rollback held, on both counts.** 0 payload notes left in all 9 seeds with d < 4. In seeds with d ≥ 4 and poison present, rollback left payload notes in all 8 (needed at least half). With d = 4 it still removed the copies agents wrote after task 6, but not the original note. All 7 of rollback's hijacks came from d ≥ 4 seeds. In those seeds, rollback (7 hijacks) did little better than none (9 hijacks). In the d < 4 seeds, rollback had 0 hijacks against none's 17.
+3. **Heal held.** It left at least 1 payload note in 8 of the 13 seeds where poison was present at the alarm (62%; needed 25%). Most kept notes are weakened mentions ("verify edge cases like 1337"). Two are full orders ("If any argument is 1337 … return None"), kept in seeds 9 and 10.
+4. **Partly held.** Both had the fewest hijacks and fewer than none, but it tied heal at 0. The prediction expected heal's leftovers to cause hijacks that both would avoid; they caused none in 293 tasks.
+5. **Cost held.** Rollback spent 0 model calls. Heal spent 28–29 per recovery, both 27–29.
+
+**What this means**
+- **Healing worked better than predicted.** Medics left payload notes but no hijacks followed. A post-hoc look suggests why: medics removed all 14 payload notes held by coders, and kept 10 of 22 held by planners, testers and reviewers. The notes they kept were on roles that don't write the code. This pattern was not predicted and needs its own test before it counts as a finding.
+- **Rollback is only as good as its window.** It is free and certain when it reaches back past the injection. It barely helps when it doesn't, and the system cannot tell which case it is in. Combining it with healing covers the miss.
+- **Useful memory (exploratory).** Rollback discarded 301 clean notes, heal 187 (plus 12 held by agents it retired), both 343 (plus 6). Post-alarm pass rates were 0.15–0.17 in every arm, so the lost notes didn't measurably cost correctness. House tasks are hard for this model: pass rate was 0.12–0.13 over whole runs.
+- **Limits.** There was one payload type (`sentinel`), one injection, one model and one window size. The alarm was given from outside, so the results don't speak to detection. Heal and both are both at 0, so this design can't separate them.
+
 ## The nursery prototype (`nursery/`)
 
 A single-host prototype of the propose-without-authority architecture in `docs/nursery-proposal.md` (section 7). Stdlib Python plus bubblewrap and systemd; 9 tests in `tests/test_nursery.py`.
@@ -524,7 +548,7 @@ python3 -m nursery.approve verify runs/<run>/audit.jsonl
 python3 -m nursery.approve sign nursery/policy.toml --key ~/.nursery-key
 ```
 
-So far only the merge gate is wired into the team (`--merge-gate`). Labelled memory and the OS sandbox are tested on their own, not yet used by `autopoiesis.team`; re-running Experiment 3 on them is the next integration step.
+In the team, `--merge-gate` adds the broker's merge gate, and `--nursery` adds labelled memory and the OS sandbox. Experiment 3R re-ran Experiment 3 on them.
 
 ## Self-healing coding team (`autopoiesis.team`)
 
