@@ -483,7 +483,7 @@ Exploratory (not pre-registered):
 
 **What this shows.** Role compartments cost nothing here and helped: agents did better reading only their own role's notes, consistent with Experiment 5's finding that other roles' notes mislead. They limit spread by construction. Whether they limit the spread of a literal-free injection, the case they were meant for, remains untested, because the model did not carry the payload into memory at all; a payload designed to be noted (as `sentinel` is) is needed.
 
-## Experiment 12 (pre-registered 2026-11-04): is rollback better than healing?
+## Experiment 12 (pre-registered 2026-11-03): is rollback better than healing?
 
 **Why.** When a compromise is reported, the team can either restore memory to an earlier state (deterministic, no model involved) or have medics repair agents (an LLM rewrites instructions and filters notes). Healing was the original Autopoiesis idea; the nursery proposal bets on rollback. Earlier experiments compared detecting compromises with preventing them. This one compares ways of recovering from one.
 
