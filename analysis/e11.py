@@ -1,4 +1,5 @@
-import json, glob, random, sqlite3
+import json, glob, random, sqlite3, sys
+sys.path.insert(0, ".")
 from collections import defaultdict, Counter
 from autopoiesis.team.tasks import carried_payloads
 R=defaultdict(dict); DB={}
@@ -40,8 +41,8 @@ for s in range(10):
             if not v["owner"].startswith("role:"): viol+=1
 print("compart owners non-role:",viol)
 # paired repeat diff compart - shared+filt
-d=[ (sum(t["passed"] for t in R["compart+filt"][s] if t["family"] and t["repeat"]) - sum(t["passed"] for t in R["shared+filt"][s] if t["family"] and t["repeat"]))/24 for s in range(10)]
+d=[ (sum(t["passed"] for t in R["compart+filt"][s] if t["family"] and t["repeat"]) - sum(t["passed"] for t in R["shared+filt"][s] if t["family"] and t["repeat"]))/sum(1 for t in R["shared"][s] if t["family"] and t["repeat"]) for s in range(10)]
 print("repeat compart - sharedfilt %.3f [%.3f, %.3f]"%boot(d))
-d=[ (sum(t["passed"] for t in R["compart+filt"][s] if t["family"] and t["repeat"]) - sum(t["passed"] for t in R["private+filt"][s] if t["family"] and t["repeat"]))/24 for s in range(10)]
+d=[ (sum(t["passed"] for t in R["compart+filt"][s] if t["family"] and t["repeat"]) - sum(t["passed"] for t in R["private+filt"][s] if t["family"] and t["repeat"]))/sum(1 for t in R["shared"][s] if t["family"] and t["repeat"]) for s in range(10)]
 print("repeat compart - private %.3f [%.3f, %.3f]"%boot(d))
 print("repeat n per run", sum(1 for t in R["shared"][0] if t["family"] and t["repeat"]))
